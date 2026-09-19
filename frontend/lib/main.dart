@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'screens/home_screen.dart';
 import 'screens/appointment_create_screen.dart';
 
 void main() {
@@ -12,8 +13,15 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: '너 지금 어디야?',
-      home: const AppointmentCreateScreen(),
+
+      // 앱을 실행하면 처음 보여줄 화면
+      initialRoute: '/',
+
+      // 화면 경로 설정
+      routes: {
+        '/': (context) => const HomeScreen(),
+        '/appointment-create': (context) => const AppointmentCreateScreen(),
+      },
     );
   }
 }
