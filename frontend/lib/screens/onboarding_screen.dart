@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 class OnboardingScreen extends StatelessWidget {
   const OnboardingScreen({super.key});
@@ -552,27 +553,36 @@ class _SmallPageDot extends StatelessWidget {
   }
 }
 
-class ThirdOnboardingScreen extends StatelessWidget {
-  const ThirdOnboardingScreen({super.key, required this.nickname});
+class ThirdOnboardingScreen extends StatefulWidget {
+  const ThirdOnboardingScreen({
+    super.key,
+    required this.nickname,
+  });
 
   final String nickname;
 
-  void _goHome(BuildContext context) {
+  @override
+  State<ThirdOnboardingScreen> createState() =>
+      _ThirdOnboardingScreenState();
+}
+
+class _ThirdOnboardingScreenState extends State<ThirdOnboardingScreen> {
+  bool _locationAgreementChecked = false;
+
+  void _goHome() {
     Navigator.of(context).pushNamedAndRemoveUntil(
       '/',
       (route) => false,
-      arguments: nickname,
+      arguments: widget.nickname,
     );
   }
 
-  
-  Future<void> _showPermissionNotice(BuildContext context) async {
+  Future<void> _requestLocationPermission() async {
     try {
-      // 1. 휴대폰의 위치 서비스가 켜져 있는지 확인
-      bool serviceEnabled =
+      final serviceEnabled =
           await Geolocator.isLocationServiceEnabled();
 
-      if (!context.mounted) return;
+      if (!mounted) return;
 
       if (!serviceEnabled) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -583,18 +593,15 @@ class ThirdOnboardingScreen extends StatelessWidget {
         return;
       }
 
-      // 2. 현재 위치 권한 확인
       LocationPermission permission =
           await Geolocator.checkPermission();
 
-      // 3. 아직 허용하지 않았다면 실제 권한 요청
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
       }
 
-      if (!context.mounted) return;
+      if (!mounted) return;
 
-      // 4. 사용자가 권한을 거부한 경우
       if (permission == LocationPermission.denied) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -604,27 +611,22 @@ class ThirdOnboardingScreen extends StatelessWidget {
         return;
       }
 
-      // 5. 권한이 영구적으로 거부된 경우
       if (permission == LocationPermission.deniedForever) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: const Text('설정에서 위치 권한을 허용해주세요.'),
             action: SnackBarAction(
               label: '설정 열기',
-              onPressed: () {
-                Geolocator.openAppSettings();
-              },
+              onPressed: Geolocator.openAppSettings,
             ),
           ),
         );
         return;
       }
 
-      // 6. 권한이 허용되면 홈 화면으로 이동
-      _goHome(context);
-
-    } catch (e) {
-      if (!context.mounted) return;
+      await _showNotificationDialog();
+    } catch (_) {
+      if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -634,192 +636,401 @@ class ThirdOnboardingScreen extends StatelessWidget {
     }
   }
 
+  Future<void> _requestNotificationPermission() async {
+    await Permission.notification.request();
+
+    if (!mounted) return;
+
+    Navigator.of(context).pop();
+    _goHome();
+  }
+
+  Future<void> _showNotificationDialog() async {
+    if (!mounted) return;
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: Colors.black.withValues(alpha: 0.35),
+      builder: (dialogContext) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(24),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 72,
+                  height: 72,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFEAF7FC),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.notifications_none_rounded,
+                    size: 34,
+                    color: Color(0xFF1685B5),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                const Text(
+                  '약속 알림을 받아보세요',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF17364A),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                const Text(
+                  '약속 시간과 친구들의 도착 소식을\n놓치지 않도록 알려드릴게요.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 14,
+                    height: 1.5,
+                    color: Color(0xFF8299AA),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: ElevatedButton(
+                    onPressed: _requestNotificationPermission,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF7DD4F7),
+                      foregroundColor: const Color(0xFF17364A),
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    child: const Text(
+                      '알림 허용',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(dialogContext).pop();
+                    _goHome();
+                  },
+                  child: const Text(
+                    '나중에',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Color(0xFF8299AA),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _infoCard({
+    required IconData icon,
+    required String title,
+    required String description,
+  }) {
+    return Container(
+      width: double.infinity,
+      height: 68,
+      padding: const EdgeInsets.symmetric(horizontal: 18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: const Color(0xFFDDEBF2),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: const BoxDecoration(
+              color: Color(0xFFEAF7FC),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              icon,
+              size: 19,
+              color: const Color(0xFF1685B5),
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF17364A),
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  description,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Color(0xFF8299AA),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
+    final canStart = _locationAgreementChecked;
+
     return Scaffold(
-      backgroundColor: const Color(0xFFF7FBFE),
+      backgroundColor: const Color(0xFFF7FBFF),
       body: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) => SingleChildScrollView(
-            child: ConstrainedBox(
-              constraints: BoxConstraints(minHeight: constraints.maxHeight),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const SizedBox(height: 36),
-                    const Text(
-                      '이따',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF17364A),
-                      ),
-                    ),
-                    const SizedBox(height: 26),
-                    Container(
-                      width: double.infinity,
-                      height: 238,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFEAF7FC),
-                        borderRadius: BorderRadius.circular(26),
-                      ),
-                      child: Center(
-                        child: Stack(
-                          clipBehavior: Clip.none,
-                          children: [
-                            Container(
-                              width: 146,
-                              height: 146,
-                              alignment: Alignment.center,
-                              decoration: const BoxDecoration(
-                                color: Colors.white,
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Icon(
-                                Icons.location_on_outlined,
-                                size: 62,
-                                color: Color(0xFF1685B5),
-                              ),
-                            ),
-                            Positioned(
-                              right: 0,
-                              bottom: 0,
-                              child: Container(
-                                width: 46,
-                                height: 46,
-                                alignment: Alignment.center,
-                                decoration: const BoxDecoration(
-                                  color: Color(0xFF7DD4F7),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: const Icon(
-                                  Icons.lock_outline,
-                                  size: 23,
-                                  color: Color(0xFF1685B5),
-                                ),
-                              ),
-                            ),
-                          ],
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Column(
+              children: [
+                const SizedBox(height: 18),
+
+                // 상단
+                SizedBox(
+                  height: 32,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: IconButton(
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                          onPressed: () => Navigator.of(context).pop(),
+                          icon: const Icon(
+                            Icons.arrow_back_ios_new_rounded,
+                            size: 20,
+                            color: Color(0xFF17364A),
+                          ),
                         ),
                       ),
+                      const Text(
+                        '위치 정보 이용 안내',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF17364A),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 26),
+
+                // 위치 아이콘
+                Container(
+                  width: 96,
+                  height: 96,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFEAF7FC),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.location_on_outlined,
+                    size: 44,
+                    color: Color(0xFF1685B5),
+                  ),
+                ),
+
+                const SizedBox(height: 22),
+
+                const SizedBox(
+                  width: double.infinity,
+                  child: Text(
+                    '약속 시간에만 위치를 사용할게요',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 21,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF17364A),
                     ),
-                    const SizedBox(height: 42),
-                    const Text(
-                      '필요한 순간에만,\n위치를 공유해요.',
-                      style: TextStyle(
-                        fontSize: 29,
-                        height: 1.3,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF17364A),
+                  ),
+                ),
+
+                const SizedBox(height: 10),
+
+                const SizedBox(
+                  width: double.infinity,
+                  child: Text(
+                    '친구들과 약속을 더 편하게 즐길 수 있도록\n필요한 시간에만 위치 정보를 사용해요.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 13,
+                      height: 1.5,
+                      color: Color(0xFF8299AA),
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 19),
+
+                _infoCard(
+                  icon: Icons.gps_fixed_rounded,
+                  title: '사용 목적',
+                  description: '친구 위치 확인과 자동 체크인',
+                ),
+
+                const SizedBox(height: 10),
+
+                _infoCard(
+                  icon: Icons.schedule_rounded,
+                  title: '사용 시간',
+                  description: '약속 30분 전부터 종료 시점까지',
+                ),
+
+                const SizedBox(height: 10),
+
+                _infoCard(
+                  icon: Icons.lock_outline_rounded,
+                  title: '개인정보 보호',
+                  description: '약속이 끝나면 위치 공유도 종료돼요',
+                ),
+
+                const SizedBox(height: 20),
+
+                // 동의 영역
+                InkWell(
+                  borderRadius: BorderRadius.circular(16),
+                  onTap: () {
+                    setState(() {
+                      _locationAgreementChecked =
+                          !_locationAgreementChecked;
+                    });
+                  },
+                  child: Container(
+                    width: double.infinity,
+                    height: 58,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: const Color(0xFFDDEBF2),
                       ),
                     ),
-                    const SizedBox(height: 16),
-                    const Text(
-                      '약속 30분 전부터 종료 시점까지만 위치를 사용해요.\n친구 위치 확인과 자동 체크인에 활용돼요.',
-                      style: TextStyle(
-                        fontSize: 14,
-                        height: 1.6,
-                        color: Color(0xFF8299AA),
-                      ),
-                    ),
-                    const SizedBox(height: 18),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 18,
-                        vertical: 18,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFE5F5FC),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: const Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '항상 위치를 추적하지 않아요',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                              color: Color(0xFF17364A),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 22,
+                          height: 22,
+                          decoration: BoxDecoration(
+                            color: _locationAgreementChecked
+                                ? const Color(0xFF1685B5)
+                                : Colors.white,
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                              color: _locationAgreementChecked
+                                  ? const Color(0xFF1685B5)
+                                  : const Color(0xFFB9CCD7),
                             ),
                           ),
-                          SizedBox(height: 8),
-                          Text(
-                            '약속이 끝나면 위치 공유도 자동으로 종료돼요.',
+                          child: _locationAgreementChecked
+                              ? const Icon(
+                                  Icons.check_rounded,
+                                  size: 16,
+                                  color: Colors.white,
+                                )
+                              : null,
+                        ),
+                        const SizedBox(width: 12),
+                        const Expanded(
+                          child: Text(
+                            '위 내용을 확인했고 위치 정보 이용에 동의합니다.',
                             style: TextStyle(
                               fontSize: 13,
-                              color: Color(0xFF8299AA),
+                              color: Color(0xFF17364A),
                             ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 18),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const _SmallPageDot(),
-                        const SizedBox(width: 10),
-                        const _SmallPageDot(),
-                        const SizedBox(width: 10),
-                        Container(
-                          width: 20,
-                          height: 8,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF1685B5),
-                            borderRadius: BorderRadius.circular(10),
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 18),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 52,
-                      child: ElevatedButton(
-                        onPressed: () => _showPermissionNotice(context),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF7DD4F7),
-                          foregroundColor: const Color(0xFF17364A),
-                          elevation: 0,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                        ),
-                        child: const Text(
-                          '위치 허용하기',
-                          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 52,
-                      child: OutlinedButton(
-                        onPressed: () => _goHome(context),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: const Color(0xFF17364A),
-                          backgroundColor: Colors.white,
-                          side: const BorderSide(color: Color(0xFFD5EAF3)),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                        ),
-                        child: const Text(
-                          '지금은 안 할게요',
-                          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                  ],
+                  ),
                 ),
-              ),
+
+                const SizedBox(height: 58),
+
+                // 동의하고 시작하기
+                SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: ElevatedButton(
+                    onPressed:
+                        canStart ? _requestLocationPermission : null,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF7DD4F7),
+                      disabledBackgroundColor: const Color(0xFFDDEBF2),
+                      foregroundColor: const Color(0xFF17364A),
+                      disabledForegroundColor: const Color(0xFF9AAEB9),
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    child: const Text(
+                      '동의하고 시작하기',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 12),
+
+                // 위치 권한은 나중에
+                SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: TextButton(
+                    onPressed: _showNotificationDialog,
+                    child: const Text(
+                      '나중에 할게요',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Color(0xFF8299AA),
+                      ),
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 20),
+              ],
             ),
           ),
         ),
