@@ -66,5 +66,7 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>이따는 약속 시간 동안 친구들과 실시간 위치를 공유하고, 도착 여부를 확인하기 위해 위치 정보가 필요합니다.</string>
 </dict>
 </plist>
