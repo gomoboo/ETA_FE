@@ -3,6 +3,57 @@ import 'package:kakao_map_sdk/kakao_map_sdk.dart';
 
 import '../services/location_tracking_service.dart';
 
+
+class FriendRadarData {
+  const FriendRadarData({
+    required this.id,
+    required this.name,
+    required this.initial,
+    required this.position,
+    required this.distanceText,
+    required this.speedKmh,
+    required this.status,
+    this.warning = false,
+  });
+
+  final String id;
+  final String name;
+  final String initial;
+  final LatLng position;
+
+  final String distanceText;
+  final double speedKmh;
+  final String status;
+  final bool warning;
+
+  String get detail {
+    final speedText = speedKmh == speedKmh.roundToDouble()
+        ? speedKmh.toStringAsFixed(0)
+        : speedKmh.toStringAsFixed(1);
+
+    return '$distanceText · ${speedText}km/h';
+  }
+
+  FriendRadarData copyWith({
+    LatLng? position,
+    String? distanceText,
+    double? speedKmh,
+    String? status,
+    bool? warning,
+  }) {
+    return FriendRadarData(
+      id: id,
+      name: name,
+      initial: initial,
+      position: position ?? this.position,
+      distanceText: distanceText ?? this.distanceText,
+      speedKmh: speedKmh ?? this.speedKmh,
+      status: status ?? this.status,
+      warning: warning ?? this.warning,
+    );
+  }
+}
+
 class LiveMapScreen extends StatefulWidget {
   const LiveMapScreen({super.key});
 
@@ -55,6 +106,39 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
 
   KakaoMapController? _mapController;
   Poi? _myPoi;
+
+  final Map<String, Poi> _friendPois = {};
+
+  List<FriendRadarData> _friends = [
+    FriendRadarData(
+      id: 'friend-jimin',
+      name: '지민',
+      initial: '지',
+      position: LatLng(37.5012, 127.0258),
+      distanceText: '1.2km',
+      speedKmh: 12,
+      status: '15분 후',
+    ),
+    FriendRadarData(
+      id: 'friend-seoyeon',
+      name: '서연',
+      initial: '서',
+      position: LatLng(37.4958, 127.0322),
+      distanceText: '450m',
+      speedKmh: 5,
+      status: '8분 후',
+    ),
+    FriendRadarData(
+      id: 'friend-minsu',
+      name: '민수',
+      initial: '민',
+      position: LatLng(37.4938, 127.0215),
+      distanceText: '2.3km',
+      speedKmh: 0,
+      status: '침대 의심',
+      warning: true,
+    ),
+  ];
 
   bool _didMoveCameraToMyLocation = false;
 
@@ -230,47 +314,73 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
   // 나중에 서버 친구 위치 데이터로 교체
   // ===============================================================
 
-  Future<void> _addDummyFriendMarkers(
+  Future<void> _renderFriendMarkers(
     KakaoMapController controller,
   ) async {
-    final friends = [
-      {
-        'id': 'friend-jimin',
-        'initial': '지',
-        'position':
-            const LatLng(37.5012, 127.0258),
-      },
-      {
-        'id': 'friend-seoyeon',
-        'initial': '서',
-        'position':
-            const LatLng(37.4958, 127.0322),
-      },
-      {
-        'id': 'friend-minsu',
-        'initial': '민',
-        'position':
-            const LatLng(37.4938, 127.0215),
-      },
-    ];
+    for (final friend in _friends) {
+      if (_friendPois.containsKey(friend.id)) {
+        continue;
+      }
 
-    for (final friend in friends) {
-      final icon =
-          await _buildCircleMarkerIcon(
-        initial:
-            friend['initial'] as String,
-        backgroundColor:
-            _friendMarkerBackground,
+      final icon = await _buildCircleMarkerIcon(
+        initial: friend.initial,
+        backgroundColor: _friendMarkerBackground,
         textColor: _blue,
       );
 
-      await controller.labelLayer.addPoi(
-        friend['position'] as LatLng,
-        id: friend['id'] as String,
+      final poi = await controller.labelLayer.addPoi(
+        friend.position,
+        id: friend.id,
         style: PoiStyle(
           icon: icon,
         ),
       );
+
+      _friendPois[friend.id] = poi;
+    }
+  }
+
+  Future<void> _updateFriendData({
+    required String id,
+    LatLng? position,
+    String? distanceText,
+    double? speedKmh,
+    String? status,
+    bool? warning,
+  }) async {
+    final index = _friends.indexWhere(
+      (friend) => friend.id == id,
+    );
+
+    if (index == -1) {
+      return;
+    }
+
+    final current = _friends[index];
+
+    final updated = current.copyWith(
+      position: position,
+      distanceText: distanceText,
+      speedKmh: speedKmh,
+      status: status,
+      warning: warning,
+    );
+
+    if (mounted) {
+      setState(() {
+        _friends[index] = updated;
+      });
+    }
+
+    if (position != null) {
+      final poi = _friendPois[id];
+
+      if (poi != null) {
+        await poi.move(
+          position,
+          500,
+        );
+      }
     }
   }
 
@@ -449,10 +559,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
                           '카카오 지도 로딩 완료',
                         );
 
-                        // 친구 더미 마커
-                        await _addDummyFriendMarkers(
-                          controller,
-                        );
+                        await _renderFriendMarkers(controller);
 
                         // GPS가 지도보다 먼저 잡혔다면
                         // 바로 내 위치 마커 표시
@@ -781,13 +888,26 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
                               height: 18,
                             ),
 
-                            const _FriendStatusRow(
-                              initial: '지',
-                              name: '지민',
-                              detail:
-                                  '1.2km · 12km/h',
-                              status:
-                                  '15분 후',
+                            ...List.generate(
+                              _friends.length,
+                              (index) {
+                                final friend = _friends[index];
+
+                                return Padding(
+                                  padding: EdgeInsets.only(
+                                    bottom: index == _friends.length - 1
+                                        ? 0
+                                        : _friendGap,
+                                  ),
+                                  child: _FriendStatusRow(
+                                    initial: friend.initial,
+                                    name: friend.name,
+                                    detail: friend.detail,
+                                    status: friend.status,
+                                    warning: friend.warning,
+                                  ),
+                                );
+                              },
                             ),
 
                             SizedBox(
