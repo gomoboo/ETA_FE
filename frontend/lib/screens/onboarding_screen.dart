@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
+import '../services/onboarding_registration_service.dart';
 
 class OnboardingScreen extends StatelessWidget {
   const OnboardingScreen({super.key});
@@ -569,12 +570,39 @@ class ThirdOnboardingScreen extends StatefulWidget {
 class _ThirdOnboardingScreenState extends State<ThirdOnboardingScreen> {
   bool _locationAgreementChecked = false;
 
-  void _goHome() {
-    Navigator.of(context).pushNamedAndRemoveUntil(
-      '/',
-      (route) => false,
-      arguments: widget.nickname,
-    );
+  Future<void> _goHome() async {
+    try {
+      // 현재 알림 권한 상태 확인
+      final notificationStatus = await Permission.notification.status;
+
+      if (!mounted) return;
+
+      // 서버에 사용자 등록
+      await OnboardingRegistrationService.register(
+        nickname: widget.nickname,
+        locationTermsAgreed: _locationAgreementChecked,
+        notificationAllowed: notificationStatus.isGranted,
+      );
+
+      if (!mounted) return;
+
+      // 등록 성공 후 홈 화면으로 이동
+      Navigator.of(context).pushNamedAndRemoveUntil(
+        '/',
+        (route) => false,
+        arguments: widget.nickname,
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('사용자 등록에 실패했어요. 다시 시도해 주세요.'),
+        ),
+      );
+
+      debugPrint('온보딩 등록 오류: $e');
+    }
   }
 
   Future<void> _requestLocationPermission() async {
