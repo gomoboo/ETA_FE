@@ -1,4 +1,4 @@
-package com.example.frontend
+package com.gomoboo.eta
 
 import io.flutter.embedding.android.FlutterActivity
 
