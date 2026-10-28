@@ -778,12 +778,6 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
               child: GestureDetector(
                 behavior:
                     HitTestBehavior.opaque,
-                onVerticalDragStart:
-                    _onDragStart,
-                onVerticalDragUpdate:
-                    _onDragUpdate,
-                onVerticalDragEnd:
-                    _onDragEnd,
                 child: Container(
                   decoration:
                       BoxDecoration(
@@ -825,34 +819,33 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
                         top: 16,
                         left: 24,
                         right: 24,
+                        bottom: 12 + (116 * buttonProgress),
                         child: Column(
                           crossAxisAlignment:
                               CrossAxisAlignment
                                   .start,
                           children: [
-                            // 손잡이
-                            Center(
-                              child:
-                                  Container(
-                                width: 40,
-                                height: 4,
-                                decoration:
-                                    BoxDecoration(
-                                  color:
-                                      const Color(
-                                    0xFFB7C4CB,
-                                  ),
-                                  borderRadius:
-                                      BorderRadius
-                                          .circular(
-                                    10,
+                            // 손잡이                                                        
+                            GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onVerticalDragStart: _onDragStart,
+                              onVerticalDragUpdate: _onDragUpdate,
+                              onVerticalDragEnd: _onDragEnd,
+                              child: SizedBox(
+                                width: double.infinity,
+                                height: 20,
+                                child: Align(
+                                  alignment: Alignment.topCenter,
+                                  child: Container(
+                                    width: 40,
+                                    height: 4,
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFB7C4CB),
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
                                   ),
                                 ),
                               ),
-                            ),
-
-                            const SizedBox(
-                              height: 16,
                             ),
 
                             const Row(
@@ -887,56 +880,30 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
                             const SizedBox(
                               height: 18,
                             ),
+                            Expanded(
+                              child: ListView.builder(
+                                padding: EdgeInsets.zero,
+                                physics: const ClampingScrollPhysics(),
+                                itemCount: _friends.length,
+                                itemBuilder: (context, index) {
+                                  final friend = _friends[index];
 
-                            ...List.generate(
-                              _friends.length,
-                              (index) {
-                                final friend = _friends[index];
-
-                                return Padding(
-                                  padding: EdgeInsets.only(
-                                    bottom: index == _friends.length - 1
-                                        ? 0
-                                        : _friendGap,
-                                  ),
-                                  child: _FriendStatusRow(
-                                    initial: friend.initial,
-                                    name: friend.name,
-                                    detail: friend.detail,
-                                    status: friend.status,
-                                    warning: friend.warning,
-                                  ),
-                                );
-                              },
-                            ),
-
-                            SizedBox(
-                              height:
-                                  _friendGap,
-                            ),
-
-                            const _FriendStatusRow(
-                              initial: '서',
-                              name: '서연',
-                              detail:
-                                  '450m · 5km/h',
-                              status:
-                                  '8분 후',
-                            ),
-
-                            SizedBox(
-                              height:
-                                  _friendGap,
-                            ),
-
-                            const _FriendStatusRow(
-                              initial: '민',
-                              name: '민수',
-                              detail:
-                                  '2.3km · 0km/h',
-                              status:
-                                  '침대 의심',
-                              warning: true,
+                                  return Padding(
+                                    padding: EdgeInsets.only(
+                                      bottom: index == _friends.length - 1
+                                          ? 0
+                                          : _friendGap,
+                                    ),
+                                    child: _FriendStatusRow(
+                                      initial: friend.initial,
+                                      name: friend.name,
+                                      detail: friend.detail,
+                                      status: friend.status,
+                                      warning: friend.warning,
+                                    ),
+                                  );
+                                },
+                              ),
                             ),
                           ],
                         ),
@@ -949,7 +916,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
                       Positioned(
                         left: 24,
                         right: 24,
-                        bottom: 20,
+                        bottom: 64,
                         child: IgnorePointer(
                           ignoring:
                               buttonProgress <
