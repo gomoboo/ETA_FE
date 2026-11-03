@@ -1,7 +1,10 @@
+
 import 'package:flutter/material.dart';
+
 import 'screens/home_screen.dart';
 import 'screens/appointment_create_screen.dart';
 import 'screens/onboarding_screen.dart';
+import 'screens/appointment_waiting_screen.dart';
 
 void main() {
   runApp(const MyApp());
@@ -22,7 +25,12 @@ class MyApp extends StatelessWidget {
       routes: {
         '/onboarding': (context) => const OnboardingScreen(),
         '/': (context) => const HomeScreen(),
-        '/appointment-create': (context) => const AppointmentCreateScreen(),
+        '/appointment-create': (context) =>
+            const AppointmentCreateScreen(),
+
+        // Issue #13: 약속 대기 화면
+        '/appointment-waiting': (context) =>
+            const AppointmentWaitingScreen(),
       },
     );
   }
