@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../services/eta_api_service.dart';
+
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
@@ -12,7 +14,6 @@ class HomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final nickname = ModalRoute.of(context)?.settings.arguments as String?;
     return Scaffold(
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () {
@@ -79,114 +80,7 @@ class HomeScreen extends StatelessWidget {
 
                     const SizedBox(height: 12),
 
-                    // 진행 중 약속 카드
-                    Container(
-                      width: double.infinity,
-                      height: 207,
-                      padding: const EdgeInsets.all(18),
-                      decoration: BoxDecoration(
-                        color: _cardBlue,
-                        borderRadius: BorderRadius.circular(18),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            '강남역 맛집 탐방',
-                            style: TextStyle(
-                              fontSize: 17,
-                              fontWeight: FontWeight.w700,
-                              color: _navy,
-                            ),
-                          ),
-
-                          const SizedBox(height: 3),
-
-                          const Text(
-                            '오늘 오후 2:30 · 강남역 11번 출구',
-                            style: TextStyle(
-                              fontSize: 13,
-                              height: 1.5,
-                              color: _gray,
-                            ),
-                          ),
-
-                          const SizedBox(height: 10),
-
-                          const Text(
-                            '위치 공유 중',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                              color: _accentBlue,
-                            ),
-                          ),
-
-                          const SizedBox(height: 8),
-
-                          const Text(
-                            '친구 4명이 함께하고 있어요',
-                            style: TextStyle(fontSize: 13, color: _accentBlue),
-                          ),
-
-                          const Spacer(),
-
-                          SizedBox(
-                            width: double.infinity,
-                            height: 48,
-                            child: ElevatedButton(
-                              onPressed: () {
-                                Navigator.pushNamed(
-                                  context,
-                                  '/live-map',
-                                  arguments: nickname,
-                                );
-                              },
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: _blue,
-                                foregroundColor: _navy,
-                                elevation: 0,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(14),
-                                ),
-                              ),
-                              child: const Text(
-                                '실시간 위치 보기',
-                                style: TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-
-                    const SizedBox(height: 18),
-
-                    const Text(
-                      '예정된 약속',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        color: _navy,
-                      ),
-                    ),
-
-                    const SizedBox(height: 12),
-
-                    _UpcomingAppointmentCard(
-                      title: '학교 근처 카페',
-                      description: '내일 오후 6:00 · 참가자 2명',
-                    ),
-
-                    const SizedBox(height: 12),
-
-                    _UpcomingAppointmentCard(
-                      title: '주말 영화 보기',
-                      description: '9월 26일 오후 4:00 · 참가자 3명',
-                    ),
+                    const _HomeAppointmentsSection(),
 
                     const SizedBox(height: 12),
 
@@ -223,6 +117,202 @@ class HomeScreen extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _HomeAppointmentsSection extends StatefulWidget {
+  const _HomeAppointmentsSection();
+
+  @override
+  State<_HomeAppointmentsSection> createState() =>
+      _HomeAppointmentsSectionState();
+}
+
+class _HomeAppointmentsSectionState extends State<_HomeAppointmentsSection> {
+  late Future<Map<String, dynamic>> _homeFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _homeFuture = EtaApiService.getHomeAppointments();
+  }
+
+  void _reload() {
+    setState(() {
+      _homeFuture = EtaApiService.getHomeAppointments();
+    });
+  }
+
+  String _formatDate(dynamic value) {
+    try {
+      final date = DateTime.parse(value.toString()).toLocal();
+      final hour = date.hour > 12
+          ? date.hour - 12
+          : date.hour == 0
+          ? 12
+          : date.hour;
+      final minute = date.minute.toString().padLeft(2, '0');
+      final period = date.hour < 12 ? '오전' : '오후';
+      return '${date.month}월 ${date.day}일 $period $hour:$minute';
+    } catch (_) {
+      return '시간 확인 필요';
+    }
+  }
+
+  void _openAppointment(Map<String, dynamic> item) {
+    final id = item['appointmentId'];
+    if (id is! int) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('약속 ID를 확인할 수 없어요.')));
+      return;
+    }
+    Navigator.pushNamed(context, '/appointment-waiting', arguments: id);
+  }
+
+  Widget _activeCard(Map<String, dynamic> item) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: const Color(0xFFEAF7FE),
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              item['title']?.toString() ?? '약속',
+              style: const TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF18354A),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              "${_formatDate(item['meetAt'])} · "
+              "${item['targetPlaceName'] ?? ''}",
+              style: const TextStyle(fontSize: 13, color: Color(0xFF718696)),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              item['isLocationSharingActive'] == true
+                  ? '위치 공유 중'
+                  : '위치 공유 대기 중',
+              style: const TextStyle(fontSize: 12, color: Color(0xFF1685B5)),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              "참가자 ${item['participantCount'] ?? 0}명",
+              style: const TextStyle(fontSize: 13, color: Color(0xFF1685B5)),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              height: 44,
+              child: ElevatedButton(
+                onPressed: () => _openAppointment(item),
+                child: const Text('약속 상세 보기'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<Map<String, dynamic>>(
+      future: _homeFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Padding(
+            padding: EdgeInsets.all(24),
+            child: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        if (snapshot.hasError) {
+          return Column(
+            children: [
+              const Text('약속 목록을 불러오지 못했어요.'),
+              Text(
+                snapshot.error.toString(),
+                style: const TextStyle(fontSize: 12),
+              ),
+              TextButton(onPressed: _reload, child: const Text('다시 시도')),
+            ],
+          );
+        }
+
+        final data = snapshot.data ?? {};
+        final active = (data['activeAppointments'] as List? ?? [])
+            .whereType<Map<String, dynamic>>()
+            .toList();
+        final upcoming = (data['upcomingAppointments'] as List? ?? [])
+            .whereType<Map<String, dynamic>>()
+            .toList();
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (active.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: Text('진행 중인 약속이 없어요.'),
+              ),
+
+            for (final item in active) _activeCard(item),
+
+            const SizedBox(height: 18),
+
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    '예정된 약속',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF18354A),
+                    ),
+                  ),
+                ),
+                IconButton(
+                  onPressed: _reload,
+                  tooltip: '약속 목록 새로고침',
+                  icon: const Icon(Icons.refresh),
+                ),
+              ],
+            ),
+
+            if (upcoming.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: Text('예정된 약속이 없어요.'),
+              ),
+
+            for (final item in upcoming)
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: InkWell(
+                  onTap: () => _openAppointment(item),
+                  borderRadius: BorderRadius.circular(18),
+                  child: _UpcomingAppointmentCard(
+                    title: item['title']?.toString() ?? '약속',
+                    description:
+                        "${_formatDate(item['meetAt'])} · "
+                        "참가자 ${item['participantCount'] ?? 0}명",
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 }

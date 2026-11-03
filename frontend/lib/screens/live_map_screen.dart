@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:kakao_map_sdk/kakao_map_sdk.dart';
 
 import '../services/location_tracking_service.dart';
-
+import '../services/eta_websocket_service.dart';
+import '../services/guest_identity_service.dart';
 
 class FriendRadarData {
   const FriendRadarData({
@@ -83,8 +86,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
   static const Color _buttonBlue = Color(0xFF7DD3F7);
 
   // 친구 마커 배경색
-  static const Color _friendMarkerBackground =
-      Color(0xFFE1F6FF);
+  static const Color _friendMarkerBackground = Color(0xFFE1F6FF);
 
   // 찌르기 버튼
   static const Color _pokeBackground = Color(0xFFFFFDED);
@@ -99,6 +101,9 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
       LocationTrackingService();
 
   LocationSample? _latestLocation;
+
+  final EtaWebSocketService _socketService = EtaWebSocketService();
+  bool _socketStarted = false;
 
   // ===============================================================
   // Kakao Map
@@ -172,9 +177,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
   }
 
   double get _buttonProgress {
-    return ((_sheetHeight - 345) /
-            (_expandedHeight - 345))
-        .clamp(0.0, 1.0);
+    return ((_sheetHeight - 345) / (_expandedHeight - 345)).clamp(0.0, 1.0);
   }
 
   double get _friendGap {
@@ -200,11 +203,22 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
       return;
     }
 
-    final arguments =
-        ModalRoute.of(context)?.settings.arguments;
+    final arguments = ModalRoute.of(context)?.settings.arguments;
 
-    if (arguments is String &&
-        arguments.trim().isNotEmpty) {
+    if (arguments is Map) {
+      final appointmentId = arguments['appointmentId'];
+      final participantId = arguments['myParticipantId'];
+      final nickname = arguments['nickname'];
+
+      if (nickname is String && nickname.trim().isNotEmpty) {
+        _myNickname = nickname.trim();
+      }
+
+      if (appointmentId is int && participantId is int) {
+        _friends = [];
+        unawaited(_connectRealtime(appointmentId, participantId));
+      }
+    } else if (arguments is String && arguments.trim().isNotEmpty) {
       _myNickname = arguments.trim();
     }
 
@@ -214,6 +228,45 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
   // ===============================================================
   // GPS 10초 주기 수집
   // ===============================================================
+
+  Future<void> _connectRealtime(int appointmentId, int participantId) async {
+    if (_socketStarted) return;
+    _socketStarted = true;
+
+    try {
+      final guestUuid = await GuestIdentityService.getOrCreateUuid();
+
+      if (!mounted) return;
+
+      await _socketService.connect(
+        appointmentId: appointmentId,
+        participantId: participantId,
+        guestUuid: guestUuid,
+        onConnected: () {
+          debugPrint('ETA WebSocket: 레이더 연결 성공');
+          if (mounted) {
+            ScaffoldMessenger.of(context)
+                .showSnackBar(const SnackBar(content: Text('실시간 서버 연결 성공')));
+          }
+        },
+        onMessage: (message) {
+          debugPrint('ETA WebSocket 수신: $message');
+        },
+        onError: (error) {
+          debugPrint('ETA WebSocket 오류: $error');
+        },
+        onDisconnected: () {
+          debugPrint('ETA WebSocket 연결 종료');
+        },
+      );
+    } catch (error) {
+      debugPrint('ETA WebSocket 연결 실패: $error');
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('실시간 연결 실패: $error')));
+      }
+    }
+  }
 
   Future<void> _startLocationTracking() async {
     await _locationTrackingService.start(
@@ -231,12 +284,8 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
         debugPrint('📍 GPS 위치 수집 완료');
         debugPrint('위도: ${sample.latitude}');
         debugPrint('경도: ${sample.longitude}');
-        debugPrint(
-          '속도: ${sample.speedKmh.toStringAsFixed(1)} km/h',
-        );
-        debugPrint(
-          '정확도: ${sample.accuracy.toStringAsFixed(1)} m',
-        );
+        debugPrint('속도: ${sample.speedKmh.toStringAsFixed(1)} km/h');
+        debugPrint('정확도: ${sample.accuracy.toStringAsFixed(1)} m');
         debugPrint('시간: ${sample.collectedAt}');
         debugPrint('==============================');
 
@@ -253,9 +302,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
   // 나중에 백엔드 Socket.IO 연결
   // ===============================================================
 
-  void _sendLocationToServer(
-    LocationSample sample,
-  ) {
+  void _sendLocationToServer(LocationSample sample) {
     // TODO: 백엔드 연결 후 location:update 전송
     //
     // socket.emit('location:update', {
@@ -283,14 +330,10 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
         decoration: BoxDecoration(
           color: backgroundColor,
           shape: BoxShape.circle,
-          border: Border.all(
-            color: Colors.white,
-            width: 3,
-          ),
+          border: Border.all(color: Colors.white, width: 3),
           boxShadow: [
             BoxShadow(
-              color:
-                  Colors.black.withValues(alpha: 0.15),
+              color: Colors.black.withValues(alpha: 0.15),
               blurRadius: 6,
               offset: const Offset(0, 2),
             ),
@@ -314,9 +357,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
   // 나중에 서버 친구 위치 데이터로 교체
   // ===============================================================
 
-  Future<void> _renderFriendMarkers(
-    KakaoMapController controller,
-  ) async {
+  Future<void> _renderFriendMarkers(KakaoMapController controller) async {
     for (final friend in _friends) {
       if (_friendPois.containsKey(friend.id)) {
         continue;
@@ -331,9 +372,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
       final poi = await controller.labelLayer.addPoi(
         friend.position,
         id: friend.id,
-        style: PoiStyle(
-          icon: icon,
-        ),
+        style: PoiStyle(icon: icon),
       );
 
       _friendPois[friend.id] = poi;
@@ -348,9 +387,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
     String? status,
     bool? warning,
   }) async {
-    final index = _friends.indexWhere(
-      (friend) => friend.id == id,
-    );
+    final index = _friends.indexWhere((friend) => friend.id == id);
 
     if (index == -1) {
       return;
@@ -376,10 +413,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
       final poi = _friendPois[id];
 
       if (poi != null) {
-        await poi.move(
-          position,
-          500,
-        );
+        await poi.move(position, 500);
       }
     }
   }
@@ -388,24 +422,18 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
   // 내 실제 GPS 위치 마커
   // ===============================================================
 
-  Future<void> _updateMyLocationMarker(
-    LocationSample sample,
-  ) async {
+  Future<void> _updateMyLocationMarker(LocationSample sample) async {
     final controller = _mapController;
 
     if (controller == null) {
       return;
     }
 
-    final position = LatLng(
-      sample.latitude,
-      sample.longitude,
-    );
+    final position = LatLng(sample.latitude, sample.longitude);
 
     // 최초 한 번만 마커 생성
     if (_myPoi == null) {
-      final icon =
-          await _buildCircleMarkerIcon(
+      final icon = await _buildCircleMarkerIcon(
         initial: _myInitial,
 
         // 친구와 색상 반전
@@ -413,20 +441,14 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
         textColor: _friendMarkerBackground,
       );
 
-      _myPoi =
-          await controller.labelLayer.addPoi(
+      _myPoi = await controller.labelLayer.addPoi(
         position,
         id: 'my-location',
-        style: PoiStyle(
-          icon: icon,
-        ),
+        style: PoiStyle(icon: icon),
       );
     } else {
       // 이후 GPS가 들어오면 기존 마커 이동
-      await _myPoi!.move(
-        position,
-        500,
-      );
+      await _myPoi!.move(position, 500);
     }
 
     // 지도 첫 진입 시 내 위치로 한 번 이동
@@ -434,12 +456,8 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
       _didMoveCameraToMyLocation = true;
 
       await controller.moveCamera(
-        CameraUpdate.newCenterPosition(
-          position,
-          zoomLevel: 16,
-        ),
-        animation:
-            const CameraAnimation(700),
+        CameraUpdate.newCenterPosition(position, zoomLevel: 16),
+        animation: const CameraAnimation(700),
       );
     }
   }
@@ -448,33 +466,22 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
   // 바텀시트 드래그
   // ===============================================================
 
-  void _onDragStart(
-    DragStartDetails details,
-  ) {
+  void _onDragStart(DragStartDetails details) {
     setState(() {
       _isDragging = true;
     });
   }
 
-  void _onDragUpdate(
-    DragUpdateDetails details,
-  ) {
+  void _onDragUpdate(DragUpdateDetails details) {
     setState(() {
-      _sheetHeight =
-          (_sheetHeight - details.delta.dy)
-              .clamp(
-                _collapsedHeight,
-                _expandedHeight,
-              )
-              .toDouble();
+      _sheetHeight = (_sheetHeight - details.delta.dy)
+          .clamp(_collapsedHeight, _expandedHeight)
+          .toDouble();
     });
   }
 
-  void _onDragEnd(
-    DragEndDetails details,
-  ) {
-    final velocity =
-        details.primaryVelocity ?? 0;
+  void _onDragEnd(DragEndDetails details) {
+    final velocity = details.primaryVelocity ?? 0;
 
     bool shouldExpand;
 
@@ -483,21 +490,15 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
     } else if (velocity > 300) {
       shouldExpand = false;
     } else {
-      final middle =
-          (_collapsedHeight +
-                  _expandedHeight) /
-              2;
+      final middle = (_collapsedHeight + _expandedHeight) / 2;
 
-      shouldExpand =
-          _sheetHeight >= middle;
+      shouldExpand = _sheetHeight >= middle;
     }
 
     setState(() {
       _isDragging = false;
 
-      _sheetHeight = shouldExpand
-          ? _expandedHeight
-          : _collapsedHeight;
+      _sheetHeight = shouldExpand ? _expandedHeight : _collapsedHeight;
     });
   }
 
@@ -508,6 +509,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
   @override
   void dispose() {
     _locationTrackingService.dispose();
+    unawaited(_socketService.dispose());
 
     super.dispose();
   }
@@ -518,8 +520,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final buttonProgress =
-        _buttonProgress;
+    final buttonProgress = _buttonProgress;
 
     return Scaffold(
       backgroundColor: _background,
@@ -534,40 +535,26 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
             Positioned.fill(
               top: 118,
               child: Container(
-                color:
-                    const Color(0xFFEBF2F6),
+                color: const Color(0xFFEBF2F6),
                 child: Stack(
                   children: [
                     KakaoMap(
-                      option:
-                          const KakaoMapOption(
-                        position: LatLng(
-                          37.4979,
-                          127.0276,
-                        ),
+                      option: const KakaoMapOption(
+                        position: LatLng(37.4979, 127.0276),
                         zoomLevel: 16,
-                        mapType:
-                            MapType.normal,
+                        mapType: MapType.normal,
                       ),
-                      onMapReady:
-                          (KakaoMapController
-                              controller) async {
-                        _mapController =
-                            controller;
+                      onMapReady: (KakaoMapController controller) async {
+                        _mapController = controller;
 
-                        debugPrint(
-                          '카카오 지도 로딩 완료',
-                        );
+                        debugPrint('카카오 지도 로딩 완료');
 
                         await _renderFriendMarkers(controller);
 
                         // GPS가 지도보다 먼저 잡혔다면
                         // 바로 내 위치 마커 표시
-                        if (_latestLocation !=
-                            null) {
-                          await _updateMyLocationMarker(
-                            _latestLocation!,
-                          );
+                        if (_latestLocation != null) {
+                          await _updateMyLocationMarker(_latestLocation!);
                         }
                       },
                     ),
@@ -575,22 +562,15 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
                     // =================================================
                     // 찌르기 버튼
                     // =================================================
-
                     Positioned(
                       left: 147,
                       top: 384,
                       child: Material(
-                        color:
-                            Colors.transparent,
+                        color: Colors.transparent,
                         child: InkWell(
-                          borderRadius:
-                              BorderRadius.circular(
-                            16,
-                          ),
+                          borderRadius: BorderRadius.circular(16),
                           onTap: () {
-                            debugPrint(
-                              '찌르기 버튼 클릭',
-                            );
+                            debugPrint('찌르기 버튼 클릭');
 
                             // TODO:
                             // 나중에 poke:send 연결
@@ -598,56 +578,35 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
                           child: Container(
                             width: 67,
                             height: 32,
-                            decoration:
-                                BoxDecoration(
-                              color:
-                                  _pokeBackground,
-                              borderRadius:
-                                  BorderRadius
-                                      .circular(
-                                16,
-                              ),
-                              border:
-                                  Border.all(
-                                color:
-                                    _pokeBorder,
+                            decoration: BoxDecoration(
+                              color: _pokeBackground,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: _pokeBorder,
                                 width: 1.5,
                               ),
                             ),
                             child: const Row(
-                              mainAxisAlignment:
-                                  MainAxisAlignment
-                                      .center,
-                              mainAxisSize:
-                                  MainAxisSize
-                                      .min,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              mainAxisSize: MainAxisSize.min,
                               children: [
                                 SizedBox(
                                   width: 16,
                                   height: 16,
                                   child: Icon(
-                                    Icons
-                                        .bolt_rounded,
+                                    Icons.bolt_rounded,
                                     size: 16,
-                                    color:
-                                        _pokeBorder,
+                                    color: _pokeBorder,
                                   ),
                                 ),
-                                SizedBox(
-                                  width: 2,
-                                ),
+                                SizedBox(width: 2),
                                 Text(
                                   '찌르기',
-                                  style:
-                                      TextStyle(
-                                    fontFamily:
-                                        'Noto Sans KR',
+                                  style: TextStyle(
+                                    fontFamily: 'Noto Sans KR',
                                     fontSize: 11,
-                                    fontWeight:
-                                        FontWeight
-                                            .w700,
-                                    color:
-                                        _pokeText,
+                                    fontWeight: FontWeight.w700,
+                                    color: _pokeText,
                                     height: 1.5,
                                   ),
                                 ),
@@ -665,7 +624,6 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
             // =========================================================
             // 상단 헤더
             // =========================================================
-
             Positioned(
               top: 0,
               left: 0,
@@ -673,67 +631,41 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
               height: 118,
               child: Container(
                 color: _background,
-                padding:
-                    const EdgeInsets.fromLTRB(
-                  24,
-                  20,
-                  24,
-                  12,
-                ),
+                padding: const EdgeInsets.fromLTRB(24, 20, 24, 12),
                 child: Row(
                   children: [
                     IconButton(
-                      padding:
-                          EdgeInsets.zero,
-                      constraints:
-                          const BoxConstraints(),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
                       onPressed: () {
-                        Navigator.of(
-                          context,
-                        ).pop();
+                        Navigator.of(context).pop();
                       },
                       icon: const Icon(
-                        Icons
-                            .arrow_back_ios_new_rounded,
+                        Icons.arrow_back_ios_new_rounded,
                         size: 20,
                         color: _blue,
                       ),
                     ),
 
-                    const SizedBox(
-                      width: 14,
-                    ),
+                    const SizedBox(width: 14),
 
                     const Expanded(
                       child: Column(
-                        mainAxisAlignment:
-                            MainAxisAlignment
-                                .center,
-                        crossAxisAlignment:
-                            CrossAxisAlignment
-                                .start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
                             '강남역 맛집 탐방',
-                            style:
-                                TextStyle(
+                            style: TextStyle(
                               fontSize: 18,
-                              fontWeight:
-                                  FontWeight
-                                      .w700,
+                              fontWeight: FontWeight.w700,
                               color: _navy,
                             ),
                           ),
-                          SizedBox(
-                            height: 4,
-                          ),
+                          SizedBox(height: 4),
                           Text(
                             '약속까지 12분 · 위치 공유 중',
-                            style:
-                                TextStyle(
-                              fontSize: 12,
-                              color: _blue,
-                            ),
+                            style: TextStyle(fontSize: 12, color: _blue),
                           ),
                         ],
                       ),
@@ -748,9 +680,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
                         '정산',
                         style: TextStyle(
                           fontSize: 14,
-                          fontWeight:
-                              FontWeight
-                                  .w700,
+                          fontWeight: FontWeight.w700,
                           color: _blue,
                         ),
                       ),
@@ -763,49 +693,29 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
             // =========================================================
             // 친구 상태 바텀시트
             // =========================================================
-
             AnimatedPositioned(
               duration: _isDragging
                   ? Duration.zero
-                  : const Duration(
-                      milliseconds: 220,
-                    ),
+                  : const Duration(milliseconds: 220),
               curve: Curves.easeOut,
               left: 0,
               right: 0,
               bottom: 0,
               height: _sheetHeight,
               child: GestureDetector(
-                behavior:
-                    HitTestBehavior.opaque,
+                behavior: HitTestBehavior.opaque,
                 child: Container(
-                  decoration:
-                      BoxDecoration(
+                  decoration: BoxDecoration(
                     color: Colors.white,
-                    borderRadius:
-                        const BorderRadius
-                            .only(
-                      topLeft:
-                          Radius.circular(
-                        28,
-                      ),
-                      topRight:
-                          Radius.circular(
-                        28,
-                      ),
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(28),
+                      topRight: Radius.circular(28),
                     ),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black
-                            .withValues(
-                          alpha: 0.12,
-                        ),
+                        color: Colors.black.withValues(alpha: 0.12),
                         blurRadius: 18,
-                        offset:
-                            const Offset(
-                          0,
-                          -4,
-                        ),
+                        offset: const Offset(0, -4),
                       ),
                     ],
                   ),
@@ -821,9 +731,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
                         right: 24,
                         bottom: 12 + (116 * buttonProgress),
                         child: Column(
-                          crossAxisAlignment:
-                              CrossAxisAlignment
-                                  .start,
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             // 손잡이
                             GestureDetector(
@@ -852,34 +760,21 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
                               children: [
                                 Text(
                                   '친구들은 오는 중',
-                                  style:
-                                      TextStyle(
+                                  style: TextStyle(
                                     fontSize: 18,
-                                    fontWeight:
-                                        FontWeight
-                                            .w700,
-                                    color:
-                                        _navy,
+                                    fontWeight: FontWeight.w700,
+                                    color: _navy,
                                   ),
                                 ),
-                                SizedBox(
-                                  width: 8,
-                                ),
+                                SizedBox(width: 8),
                                 Text(
                                   '방금 업데이트',
-                                  style:
-                                      TextStyle(
-                                    fontSize: 12,
-                                    color:
-                                        _gray,
-                                  ),
+                                  style: TextStyle(fontSize: 12, color: _gray),
                                 ),
                               ],
                             ),
 
-                            const SizedBox(
-                              height: 18,
-                            ),
+                            const SizedBox(height: 18),
                             Expanded(
                               child: ListView.builder(
                                 padding: EdgeInsets.zero,
@@ -912,70 +807,40 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
                       // =================================================
                       // 펼침 상태 버튼
                       // =================================================
-
                       Positioned(
                         left: 24,
                         right: 24,
                         bottom: 64,
                         child: IgnorePointer(
-                          ignoring:
-                              buttonProgress <
-                                  0.95,
-                          child:
-                              Transform.translate(
-                            offset: Offset(
-                              0,
-                              8 *
-                                  (1 -
-                                      buttonProgress),
-                            ),
+                          ignoring: buttonProgress < 0.95,
+                          child: Transform.translate(
+                            offset: Offset(0, 8 * (1 - buttonProgress)),
                             child: Opacity(
-                              opacity:
-                                  buttonProgress,
-                              child:
-                                  SizedBox(
+                              opacity: buttonProgress,
+                              child: SizedBox(
                                 height: 52,
-                                child:
-                                    ElevatedButton(
-                                  onPressed:
-                                      buttonProgress >=
-                                              0.95
-                                          ? () {
-                                              // TODO:
-                                              // 내 도착 상태 확인
-                                            }
-                                          : null,
-                                  style:
-                                      ElevatedButton
-                                          .styleFrom(
-                                    backgroundColor:
-                                        _buttonBlue,
-                                    disabledBackgroundColor:
-                                        _buttonBlue,
-                                    foregroundColor:
-                                        _navy,
-                                    disabledForegroundColor:
-                                        _navy,
+                                child: ElevatedButton(
+                                  onPressed: buttonProgress >= 0.95
+                                      ? () {
+                                          // TODO:
+                                          // 내 도착 상태 확인
+                                        }
+                                      : null,
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: _buttonBlue,
+                                    disabledBackgroundColor: _buttonBlue,
+                                    foregroundColor: _navy,
+                                    disabledForegroundColor: _navy,
                                     elevation: 0,
-                                    shape:
-                                        RoundedRectangleBorder(
-                                      borderRadius:
-                                          BorderRadius
-                                              .circular(
-                                        14,
-                                      ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(14),
                                     ),
                                   ),
-                                  child:
-                                      const Text(
+                                  child: const Text(
                                     '내 도착 상태 확인',
-                                    style:
-                                        TextStyle(
-                                      fontSize:
-                                          15,
-                                      fontWeight:
-                                          FontWeight
-                                              .w700,
+                                    style: TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w700,
                                     ),
                                   ),
                                 ),
@@ -1000,8 +865,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
 // 친구 상태 Row
 // =================================================================
 
-class _FriendStatusRow
-    extends StatelessWidget {
+class _FriendStatusRow extends StatelessWidget {
   const _FriendStatusRow({
     required this.initial,
     required this.name,
@@ -1026,70 +890,45 @@ class _FriendStatusRow
           Container(
             width: 44,
             height: 44,
-            alignment:
-                Alignment.center,
-            decoration:
-                const BoxDecoration(
-              color:
-                  Color(0xFFEAF7FE),
-              shape:
-                  BoxShape.circle,
+            alignment: Alignment.center,
+            decoration: const BoxDecoration(
+              color: Color(0xFFEAF7FE),
+              shape: BoxShape.circle,
             ),
             child: Text(
               initial,
-              style:
-                  const TextStyle(
+              style: const TextStyle(
                 fontSize: 16,
-                fontWeight:
-                    FontWeight.w700,
-                color:
-                    Color(0xFF1685B5),
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF1685B5),
               ),
             ),
           ),
 
-          const SizedBox(
-            width: 14,
-          ),
+          const SizedBox(width: 14),
 
           // 이름 + 거리/속도
           Expanded(
             child: Column(
-              mainAxisAlignment:
-                  MainAxisAlignment
-                      .center,
-              crossAxisAlignment:
-                  CrossAxisAlignment
-                      .start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   name,
-                  style:
-                      const TextStyle(
+                  style: const TextStyle(
                     fontSize: 15,
-                    fontWeight:
-                        FontWeight
-                            .w700,
-                    color:
-                        Color(
-                      0xFF18354A,
-                    ),
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF18354A),
                   ),
                 ),
 
-                const SizedBox(
-                  height: 2,
-                ),
+                const SizedBox(height: 2),
 
                 Text(
                   detail,
-                  style:
-                      const TextStyle(
+                  style: const TextStyle(
                     fontSize: 12,
-                    color:
-                        Color(
-                      0xFF718696,
-                    ),
+                    color: Color(0xFF718696),
                   ),
                 ),
               ],
@@ -1101,15 +940,10 @@ class _FriendStatusRow
             status,
             style: TextStyle(
               fontSize: 13,
-              fontWeight:
-                  FontWeight.w700,
+              fontWeight: FontWeight.w700,
               color: warning
-                  ? const Color(
-                      0xFFD46B2B,
-                    )
-                  : const Color(
-                      0xFF1685B5,
-                    ),
+                  ? const Color(0xFFD46B2B)
+                  : const Color(0xFF1685B5),
             ),
           ),
         ],
