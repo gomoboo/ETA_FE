@@ -30,6 +30,7 @@ class _AppointmentCreateScreenState extends State<AppointmentCreateScreen> {
 
   bool _showValidationErrors = false;
   bool _isCreating = false;
+  bool _creationFailed = false;
 
   bool get _isTitleInvalid =>
       _showValidationErrors && _titleController.text.trim().isEmpty;
@@ -41,6 +42,7 @@ class _AppointmentCreateScreenState extends State<AppointmentCreateScreen> {
 
   bool get _isPenaltyInvalid {
     if (!_showValidationErrors) return false;
+    if (_penaltyMode == 'none') return false;
 
     if (_penaltyMode == 'lateFee') {
       if (_lateFeeOption.isEmpty) return true;
@@ -65,7 +67,7 @@ class _AppointmentCreateScreenState extends State<AppointmentCreateScreen> {
     return true;
   }
 
-  String _penaltyMode = '';
+  String _penaltyMode = 'none';
   String _lateFeeOption = '';
   String _penaltyOption = '';
   String _customPenaltyText = '';
@@ -98,6 +100,7 @@ class _AppointmentCreateScreenState extends State<AppointmentCreateScreen> {
 
     setState(() {
       _showValidationErrors = true;
+      _creationFailed = false;
     });
 
     final isValid =
@@ -107,6 +110,14 @@ class _AppointmentCreateScreenState extends State<AppointmentCreateScreen> {
         !_isPenaltyInvalid;
 
     if (!isValid) return;
+
+    if (_penaltyMode == 'none') {
+      _showCreateError(
+        '지각 규칙 없음은 서버 지원 확인 후 사용할 수 있어요. '
+        '현재는 벌칙 또는 지각비를 선택해 주세요.',
+      );
+      return;
+    }
 
     final place = _selectedPlace!;
     final meetAt = _selectedAppointmentDateTime!;
@@ -143,11 +154,7 @@ class _AppointmentCreateScreenState extends State<AppointmentCreateScreen> {
         return;
       }
     } else if (_penaltyMode == 'penalty') {
-      final penaltyLabels = {
-        'coffee': '커피 쏘기',
-        'photo': '인생네컷',
-        'selfie': '셀카 인증',
-      };
+      final penaltyLabels = {'coffee': '커피 사기', 'snack': '간식 사기'};
 
       penaltyContent = _penaltyOption == 'custom'
           ? _customPenaltyText.trim()
@@ -186,28 +193,30 @@ class _AppointmentCreateScreenState extends State<AppointmentCreateScreen> {
       _isCreating = true;
     });
 
+    var navigationStarted = false;
     try {
       final response = await EtaApiService.createAppointment(requestBody);
 
-      final inviteUrl = response['inviteUrl']?.toString();
       final appointmentId = response['appointmentId'];
 
-      if (inviteUrl == null || inviteUrl.isEmpty || appointmentId is! int) {
-        throw const FormatException('서버에서 약속 정보가 올바르게 반환되지 않았어요.');
+      if (appointmentId is! int) {
+        throw const FormatException('서버에서 약속 ID를 확인하지 못했어요.');
       }
 
       if (!mounted) return;
 
-      setState(() {
-        _inviteLink = inviteUrl;
-      });
-
-      await _showInviteSheet();
+      Navigator.of(
+        context,
+      ).pushReplacementNamed('/appointment-detail', arguments: appointmentId);
+      navigationStarted = true;
     } catch (error) {
       if (!mounted) return;
-      _showCreateError('약속 생성 실패: $error');
+      debugPrint('약속 생성 API 오류: $error');
+      setState(() {
+        _creationFailed = true;
+      });
     } finally {
-      if (mounted) {
+      if (mounted && !navigationStarted) {
         setState(() {
           _isCreating = false;
         });
@@ -549,6 +558,8 @@ class _AppointmentCreateScreenState extends State<AppointmentCreateScreen> {
   Future<void> _showLocationShareSheet() async {
     final selectedMinutes = await showModalBottomSheet<int>(
       context: context,
+      isDismissible: true,
+      enableDrag: true,
       backgroundColor: Colors.transparent,
       barrierColor: Colors.black.withValues(alpha: 0.18),
       builder: (sheetContext) {
@@ -1959,360 +1970,505 @@ class _AppointmentCreateScreenState extends State<AppointmentCreateScreen> {
   }
 
   // ===============================================================
+
+  bool _allowExitFromCreate = false;
+  bool _exitDialogOpen = false;
+
+  Future<void> _confirmCancelCreate() async {
+    if (!mounted || _exitDialogOpen || _isCreating) return;
+
+    _exitDialogOpen = true;
+
+    try {
+      final shouldCancel = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        barrierColor: const Color(0x660D2535),
+        builder: (dialogContext) {
+          return Dialog(
+            backgroundColor: Colors.white,
+            elevation: 0,
+            insetPadding: const EdgeInsets.symmetric(horizontal: 28),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(24),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    '작성을 취소할까요?',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF19364C),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  const Text(
+                    '지금 나가면 작성한 내용이 사라져요.\n'
+                    '계속 작성하거나 취소할 수 있어요.',
+                    style: TextStyle(
+                      fontSize: 13,
+                      height: 1.6,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF7B94A6),
+                    ),
+                  ),
+                  const SizedBox(height: 28),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: SizedBox(
+                          height: 48,
+                          child: OutlinedButton(
+                            onPressed: () {
+                              Navigator.of(dialogContext).pop(false);
+                            },
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: const Color(0xFF19364C),
+                              side: const BorderSide(color: Color(0xFFD9EBF6)),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                            ),
+                            child: const Text(
+                              '계속 작성',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: SizedBox(
+                          height: 48,
+                          child: ElevatedButton(
+                            onPressed: () {
+                              Navigator.of(dialogContext).pop(true);
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF7BD0F4),
+                              foregroundColor: const Color(0xFF19364C),
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                            ),
+                            child: const Text(
+                              '작성 취소',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+
+      if (!mounted || shouldCancel != true) return;
+
+      // 실제 화면을 떠날 때만 뒤로가기를 허용
+      setState(() {
+        _allowExitFromCreate = true;
+      });
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          Navigator.of(context).pop();
+        }
+      });
+    } finally {
+      _exitDialogOpen = false;
+    }
+  }
+
   // 메인 화면
   // ===============================================================
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: _background,
-      body: SafeArea(
-        child: Column(
-          children: [
-            // 상단 헤더
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 22, 24, 12),
-              child: Row(
-                children: [
-                  InkWell(
-                    onTap: () {
-                      Navigator.of(context).pop();
-                    },
-                    borderRadius: BorderRadius.circular(20),
-                    child: const Padding(
-                      padding: EdgeInsets.all(2),
-                      child: Icon(
-                        Icons.arrow_back_ios_new_rounded,
-                        size: 18,
-                        color: _blue,
-                      ),
-                    ),
-                  ),
+    // 피그마 기준 높이 844dp. 긴 화면의 추가 공간만 분배.
+    final double extraGap = ((MediaQuery.of(context).size.height - 844.0) / 4.0)
+        .clamp(0.0, 20.0)
+        .toDouble();
 
-                  const SizedBox(width: 12),
-
-                  const Text(
-                    '약속 만들기',
-                    style: TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w700,
-                      color: _navy,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+    return PopScope(
+      canPop: _allowExitFromCreate,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop && !_allowExitFromCreate) {
+          _confirmCancelCreate();
+        }
+      },
+      child: Scaffold(
+        backgroundColor: _background,
+        body: SafeArea(
+          child: Column(
+            children: [
+              // 상단 헤더
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 22, 24, 12),
+                child: Row(
                   children: [
-                    // 약속 이름
-                    _sectionLabel('약속 이름'),
-
-                    const SizedBox(height: 8),
-
-                    TextField(
-                      controller: _titleController,
-                      onChanged: (_) {
-                        if (_showValidationErrors) {
-                          setState(() {});
-                        }
-                      },
-                      style: const TextStyle(fontSize: 13, color: _navy),
-                      decoration: _inputDecoration().copyWith(
-                        hintText: '약속 이름을 입력해 주세요',
-                        hintStyle: const TextStyle(fontSize: 13, color: _gray),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(14),
-                          borderSide: BorderSide(
-                            color: _isTitleInvalid ? Colors.red : _border,
-                            width: _isTitleInvalid ? 1.5 : 1,
-                          ),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(14),
-                          borderSide: BorderSide(
-                            color: _isTitleInvalid ? Colors.red : _blue,
-                            width: 1.5,
-                          ),
+                    InkWell(
+                      onTap: _confirmCancelCreate,
+                      borderRadius: BorderRadius.circular(20),
+                      child: const Padding(
+                        padding: EdgeInsets.all(2),
+                        child: Icon(
+                          Icons.arrow_back_ios_new_rounded,
+                          size: 18,
+                          color: _blue,
                         ),
                       ),
                     ),
 
-                    if (_isTitleInvalid) ...[
-                      const SizedBox(height: 6),
-                      const Text(
-                        '입력이 완료되지 않았습니다.',
-                        style: TextStyle(fontSize: 11, color: Colors.red),
-                      ),
-                    ],
-
-                    const SizedBox(height: 17),
-
-                    // 약속 장소
-                    _sectionLabel('약속 장소'),
-
-                    const SizedBox(height: 8),
-
-                    _tapField(
-                      hasError: _isPlaceInvalid,
-                      icon: Icons.search_rounded,
-                      text: _selectedPlace?.name ?? '장소 검색',
-                      textColor: _selectedPlace == null ? _gray : _navy,
-                      trailing: const Icon(
-                        Icons.location_on_outlined,
-                        size: 21,
-                        color: _blue,
-                      ),
-                      onTap: () async {
-                        final result = await Navigator.of(context)
-                            .push<PlaceResult>(
-                              MaterialPageRoute(
-                                builder: (context) => const PlaceSearchScreen(),
-                              ),
-                            );
-
-                        if (result != null) {
-                          setState(() {
-                            _selectedPlace = result;
-                          });
-                        }
-                      },
-                    ),
-
-                    // 약속 장소 미입력 경고
-                    if (_isPlaceInvalid) ...[
-                      const SizedBox(height: 6),
-                      const Text(
-                        '입력이 완료되지 않았습니다.',
-                        style: TextStyle(fontSize: 11, color: Colors.red),
-                      ),
-                    ],
-
-                    const SizedBox(height: 17),
-
-                    // 날짜 · 시간
-                    _sectionLabel('날짜 · 시간'),
-
-                    const SizedBox(height: 8),
-
-                    _tapField(
-                      hasError: _isDateTimeInvalid,
-                      text: _selectedAppointmentDateTime == null
-                          ? '날짜 설정 / 시간 설정'
-                          : _formatAppointmentDateTime(
-                              _selectedAppointmentDateTime!,
-                            ),
-                      textColor: _selectedAppointmentDateTime == null
-                          ? _gray
-                          : _navy,
-                      trailing: const Icon(
-                        Icons.calendar_today_outlined,
-                        size: 18,
-                        color: _gray,
-                      ),
-                      onTap: _showDateTimeSheet,
-                    ),
-
-                    // 날짜·시간 미입력 경고
-                    if (_isDateTimeInvalid) ...[
-                      const SizedBox(height: 6),
-                      const Text(
-                        '입력이 완료되지 않았습니다.',
-                        style: TextStyle(fontSize: 11, color: Colors.red),
-                      ),
-                    ],
-
-                    const SizedBox(height: 17),
-
-                    // 위치 공유
-                    _sectionLabel('위치 공유 시작'),
-
-                    const SizedBox(height: 8),
-
-                    _tapField(
-                      text: _locationShareMinutes == 60
-                          ? '약속 1시간 전'
-                          : '약속 $_locationShareMinutes분 전',
-                      textColor: _navy,
-                      trailing: const Icon(
-                        Icons.chevron_right_rounded,
-                        size: 19,
-                        color: _gray,
-                      ),
-                      onTap: _showLocationShareSheet,
-                    ),
-
-                    const SizedBox(height: 17),
-
-                    // 페널티 설정
-                    // 페널티 설정
-                    _sectionLabel('페널티 설정'),
-
-                    const SizedBox(height: 9),
-
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _choiceButton(
-                            label: '벌칙 모드',
-                            selected: _penaltyMode == 'penalty',
-                            hasError: _isPenaltyInvalid && _penaltyMode.isEmpty,
-                            onTap: () {
-                              setState(() {
-                                _penaltyMode = 'penalty';
-                              });
-                            },
-                          ),
-                        ),
-
-                        const SizedBox(width: 8),
-
-                        Expanded(
-                          child: _choiceButton(
-                            label: '지각비 모드',
-                            selected: _penaltyMode == 'lateFee',
-                            hasError: _isPenaltyInvalid && _penaltyMode.isEmpty,
-                            onTap: () {
-                              setState(() {
-                                _penaltyMode = 'lateFee';
-                              });
-                            },
-                          ),
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 8),
-
-                    if (_penaltyMode == 'lateFee')
-                      _lateFeeOptions()
-                    else if (_penaltyMode == 'penalty')
-                      _penaltyOptions(),
-
-                    // 지각비 직접 설정
-                    if (_penaltyMode == 'lateFee' &&
-                        _lateFeeOption == 'custom') ...[
-                      const SizedBox(height: 8),
-                      _customLateFeeDisplayField(),
-                    ],
-
-                    // 벌칙 직접 입력
-                    // 벌칙 직접 입력
-                    if (_penaltyMode == 'penalty' &&
-                        _penaltyOption == 'custom') ...[
-                      const SizedBox(height: 8),
-                      _customPenaltyDisplayField(),
-                    ],
-
-                    const SizedBox(height: 18),
-
-                    // 초대 링크
-                    _sectionLabel('초대 링크'),
-
-                    const SizedBox(height: 8),
-
-                    Container(
-                      height: 48,
-                      padding: const EdgeInsets.fromLTRB(14, 5, 6, 5),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: _border),
-                      ),
-                      child: Row(
-                        children: [
-                          const Expanded(
-                            child: Text(
-                              'where.app/join/0724',
-                              style: TextStyle(fontSize: 13, color: _navy),
-                            ),
-                          ),
-
-                          SizedBox(
-                            height: 36,
-                            child: ElevatedButton(
-                              onPressed: () async {
-                                await Clipboard.setData(
-                                  const ClipboardData(
-                                    text: 'where.app/join/0724',
-                                  ),
-                                );
-
-                                if (!context.mounted) return;
-
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('초대 링크가 복사됐어요.'),
-                                    duration: Duration(seconds: 2),
-                                  ),
-                                );
-                              },
-                              style: ElevatedButton.styleFrom(
-                                elevation: 0,
-                                backgroundColor: _navy,
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(11),
-                                ),
-                              ),
-                              child: const Text(
-                                '복사하기',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-
-                    const SizedBox(height: 12),
+                    const SizedBox(width: 12),
 
                     const Text(
-                      '위치는 약속 30분 전부터 공유돼요.\n'
-                      '지각비는 참여자가 동의한 규칙으로 계산해요.',
-                      style: TextStyle(fontSize: 11, height: 1.5, color: _gray),
-                    ),
-
-                    const SizedBox(height: 26),
-
-                    SizedBox(
-                      width: double.infinity,
-                      height: 52,
-                      child: ElevatedButton(
-                        onPressed: _createAppointment,
-                        style: ElevatedButton.styleFrom(
-                          elevation: 0,
-                          backgroundColor: _buttonBlue,
-                          foregroundColor: _navy,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                        ),
-                        child: const Text(
-                          '약속 만들고 초대하기',
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
+                      '약속 만들기',
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w700,
+                        color: _navy,
                       ),
                     ),
-                    const SizedBox(height: 12),
                   ],
                 ),
               ),
-            ),
-          ],
+
+              Expanded(
+                child: _isCreating
+                    ? const Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            SizedBox(
+                              width: 42,
+                              height: 42,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 4,
+                                color: Color(0xFFA6BAC6),
+                              ),
+                            ),
+                            SizedBox(height: 18),
+                            Text(
+                              '약속을 만들고 있어요',
+                              style: TextStyle(
+                                color: Color(0xFF51697A),
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    : SingleChildScrollView(
+                        padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // 약속 이름
+                            _sectionLabel('약속 이름'),
+
+                            const SizedBox(height: 8),
+
+                            TextField(
+                              controller: _titleController,
+                              onChanged: (_) {
+                                if (_showValidationErrors) {
+                                  setState(() {});
+                                }
+                              },
+                              style: const TextStyle(
+                                fontSize: 13,
+                                color: _navy,
+                              ),
+                              decoration: _inputDecoration().copyWith(
+                                constraints: const BoxConstraints.tightFor(
+                                  height: 51,
+                                ),
+                                isDense: true,
+                                hintText: '약속 이름을 입력해 주세요',
+                                hintStyle: const TextStyle(
+                                  fontSize: 13,
+                                  color: _gray,
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(18),
+                                  borderSide: BorderSide(
+                                    color: _isTitleInvalid
+                                        ? const Color(0xFF1685B5)
+                                        : _border,
+                                    width: _isTitleInvalid ? 1.5 : 1,
+                                  ),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(18),
+                                  borderSide: BorderSide(
+                                    color: _isTitleInvalid
+                                        ? const Color(0xFF1685B5)
+                                        : _blue,
+                                    width: 1.5,
+                                  ),
+                                ),
+                              ),
+                            ),
+
+                            SizedBox(
+                              height: 26 + extraGap * 0.4,
+                              child: Padding(
+                                padding: const EdgeInsets.only(top: 4),
+                                child: Text(
+                                  _isTitleInvalid ? '약속 이름을 입력해 주세요.' : '',
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    color: Color(0xFF1685B5),
+                                  ),
+                                ),
+                              ),
+                            ),
+
+                            // 약속 장소
+                            _sectionLabel('약속 장소'),
+
+                            const SizedBox(height: 8),
+
+                            _tapField(
+                              hasError: _isPlaceInvalid,
+                              icon: Icons.search_rounded,
+                              text: _selectedPlace?.name ?? '장소 검색',
+                              textColor: _selectedPlace == null ? _gray : _navy,
+                              trailing: const Icon(
+                                Icons.location_on_outlined,
+                                size: 21,
+                                color: _blue,
+                              ),
+                              onTap: () async {
+                                final result = await Navigator.of(context)
+                                    .push<PlaceResult>(
+                                      MaterialPageRoute(
+                                        builder: (context) =>
+                                            const PlaceSearchScreen(),
+                                      ),
+                                    );
+
+                                if (result != null) {
+                                  setState(() {
+                                    _selectedPlace = result;
+                                  });
+                                }
+                              },
+                            ),
+
+                            // 약속 장소 미입력 경고
+                            SizedBox(
+                              height: 26 + extraGap * 0.4,
+                              child: Padding(
+                                padding: const EdgeInsets.only(top: 4),
+                                child: Text(
+                                  _isPlaceInvalid ? '약속 장소를 선택해 주세요.' : '',
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    color: Color(0xFF1685B5),
+                                  ),
+                                ),
+                              ),
+                            ),
+
+                            // 날짜 · 시간
+                            _sectionLabel('날짜 · 시간'),
+
+                            const SizedBox(height: 8),
+
+                            _tapField(
+                              hasError: _isDateTimeInvalid,
+                              text: _selectedAppointmentDateTime == null
+                                  ? '날짜 설정 / 시간 설정'
+                                  : _formatAppointmentDateTime(
+                                      _selectedAppointmentDateTime!,
+                                    ),
+                              textColor: _selectedAppointmentDateTime == null
+                                  ? _gray
+                                  : _navy,
+                              trailing: const Icon(
+                                Icons.calendar_today_outlined,
+                                size: 18,
+                                color: _gray,
+                              ),
+                              onTap: _showDateTimeSheet,
+                            ),
+
+                            // 날짜·시간 미입력 경고
+                            SizedBox(
+                              height: 26 + extraGap * 0.4,
+                              child: Padding(
+                                padding: const EdgeInsets.only(top: 4),
+                                child: Text(
+                                  _isDateTimeInvalid
+                                      ? '현재 이후의 날짜와 시간을 선택해 주세요.'
+                                      : '',
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    color: Color(0xFF1685B5),
+                                  ),
+                                ),
+                              ),
+                            ),
+
+                            // 위치 공유
+                            _sectionLabel('위치 공유 시작'),
+
+                            const SizedBox(height: 8),
+
+                            _tapField(
+                              height: 35,
+                              radius: 14,
+                              text: _locationShareMinutes == 60
+                                  ? '약속 1시간 전'
+                                  : '약속 $_locationShareMinutes분 전',
+                              textColor: _navy,
+                              trailing: const Icon(
+                                Icons.chevron_right_rounded,
+                                size: 19,
+                                color: _gray,
+                              ),
+                              onTap: _showLocationShareSheet,
+                            ),
+
+                            SizedBox(height: 16 + extraGap),
+
+                            // 페널티 설정
+                            // 페널티 설정
+                            _sectionLabel('지각 규칙'),
+
+                            const SizedBox(height: 9),
+
+                            Row(
+                              children: [
+                                _figmaRuleChoice(
+                                  height: 48,
+                                  radius: 14,
+                                  label: '벌칙',
+                                  selected: _penaltyMode == 'penalty',
+                                  onTap: () {
+                                    setState(() {
+                                      _penaltyMode = 'penalty';
+                                      if (_penaltyOption.isEmpty) {
+                                        _penaltyOption = 'coffee';
+                                      }
+                                    });
+                                  },
+                                ),
+                                const SizedBox(width: 8),
+                                _figmaRuleChoice(
+                                  height: 48,
+                                  radius: 14,
+                                  label: '지각비',
+                                  selected: _penaltyMode == 'lateFee',
+                                  onTap: () {
+                                    setState(() {
+                                      _penaltyMode = 'lateFee';
+                                      if (_lateFeeOption.isEmpty) {
+                                        _lateFeeOption = '1000';
+                                      }
+                                    });
+                                  },
+                                ),
+                                const SizedBox(width: 8),
+                                _figmaRuleChoice(
+                                  height: 48,
+                                  radius: 14,
+                                  label: '없음',
+                                  selected: _penaltyMode == 'none',
+                                  onTap: () {
+                                    setState(() {
+                                      _penaltyMode = 'none';
+                                    });
+                                  },
+                                ),
+                              ],
+                            ),
+
+                            const SizedBox(height: 8),
+
+                            if (_penaltyMode == 'none')
+                              _figmaRuleSummary('지각비 · 벌칙 없음'),
+
+                            if (_penaltyMode == 'lateFee')
+                              _lateFeeOptions()
+                            else if (_penaltyMode == 'penalty')
+                              _penaltyOptions(),
+
+                            const SizedBox(height: 18),
+                          ],
+                        ),
+                      ),
+              ),
+              if (!_isCreating && _creationFailed)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 0, 24, 0),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      const Icon(
+                        Icons.error_outline,
+                        size: 18,
+                        color: Color(0xFFFF5D5D),
+                      ),
+                      const SizedBox(width: 7),
+                      const Expanded(
+                        child: Text(
+                          '약속을 생성하지 못했어요. 연결을 확인하고 다시 시도해 주세요.',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Color(0xFFFF5D5D),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              if (!_isCreating)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
+                  child: SizedBox(
+                    width: double.infinity,
+                    height: 52,
+                    child: ElevatedButton(
+                      onPressed: _isCreating ? null : _createAppointment,
+                      style: ElevatedButton.styleFrom(
+                        elevation: 0,
+                        backgroundColor: _buttonBlue,
+                        foregroundColor: _navy,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      child: Text(
+                        _isCreating ? '약속을 만들고 있어요' : '약속 만들기',
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -2322,64 +2478,347 @@ class _AppointmentCreateScreenState extends State<AppointmentCreateScreen> {
   // 지각비 옵션
   // ===============================================================
 
+  Future<String?> _showCustomRuleSheet({
+    required String title,
+    required String description,
+    required String hint,
+    required String note,
+    required String initialText,
+    required bool isFee,
+  }) async {
+    var draftValue = initialText;
+
+    return await showModalBottomSheet<String>(
+      context: context,
+      isDismissible: true,
+      enableDrag: true,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black54,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (sheetContext, refresh) {
+            final value = draftValue.trim();
+            final valid = isFee
+                ? RegExp(r'^[0-9]+$').hasMatch(value) &&
+                      (int.tryParse(value) ?? 0) > 0
+                : value.isNotEmpty;
+
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(sheetContext).viewInsets.bottom,
+              ),
+              child: Container(
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+                ),
+                child: SafeArea(
+                  top: false,
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(24, 12, 24, 28),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Center(
+                          child: Container(
+                            width: 36,
+                            height: 5,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFC6D1D8),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        Text(
+                          title,
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF19364C),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          description,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Color(0xFF8099AA),
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        TextFormField(
+                          initialValue: initialText,
+                          keyboardType: isFee
+                              ? TextInputType.number
+                              : TextInputType.text,
+                          maxLines: 1,
+                          onChanged: (text) {
+                            refresh(() {
+                              draftValue = text;
+                            });
+                          },
+                          style: const TextStyle(
+                            fontSize: 14,
+                            color: Color(0xFF19364C),
+                          ),
+                          decoration: InputDecoration(
+                            hintText: hint,
+                            hintStyle: const TextStyle(
+                              fontSize: 14,
+                              color: Color(0xFFA1B3C1),
+                            ),
+                            suffixIcon: isFee
+                                ? const Padding(
+                                    padding: EdgeInsets.only(right: 14),
+                                    child: Center(
+                                      widthFactor: 1,
+                                      child: Text(
+                                        '원/분',
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w700,
+                                          color: Color(0xFF1685B5),
+                                        ),
+                                      ),
+                                    ),
+                                  )
+                                : null,
+                            filled: true,
+                            fillColor: const Color(0xFFF7FBFF),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 16,
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(14),
+                              borderSide: const BorderSide(
+                                color: Color(0xFFE4F1F9),
+                              ),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(14),
+                              borderSide: const BorderSide(
+                                color: Color(0xFF66C9F4),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 28),
+                        Text(
+                          note,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: Color(0xFF8099AA),
+                          ),
+                        ),
+                        const SizedBox(height: 30),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: SizedBox(
+                                height: 48,
+                                child: OutlinedButton(
+                                  onPressed: () {
+                                    Navigator.of(sheetContext).pop();
+                                  },
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: const Color(0xFF19364C),
+                                    side: const BorderSide(
+                                      color: Color(0xFFE1EFF8),
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(14),
+                                    ),
+                                  ),
+                                  child: const Text('취소'),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: SizedBox(
+                                height: 48,
+                                child: ElevatedButton(
+                                  onPressed: valid
+                                      ? () {
+                                          Navigator.of(sheetContext).pop(value);
+                                        }
+                                      : null,
+                                  style: ElevatedButton.styleFrom(
+                                    disabledBackgroundColor: const Color(
+                                      0xFF7BD0F4,
+                                    ),
+                                    disabledForegroundColor: const Color(
+                                      0xFF19364C,
+                                    ),
+                                    backgroundColor: const Color(0xFF7BD0F4),
+                                    foregroundColor: const Color(0xFF19364C),
+                                    elevation: 0,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(14),
+                                    ),
+                                  ),
+                                  child: const Text('적용'),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _openCustomPenaltySheet() async {
+    final result = await _showCustomRuleSheet(
+      title: '벌칙 직접 입력',
+      description: '친구들이 이해하기 쉽게 짧게 적어 주세요.',
+      hint: '예: 다음 약속에 커피 사기',
+      note: '입력한 벌칙이 약속의 지각 규칙으로 적용돼요.',
+      initialText: _customPenaltyText,
+      isFee: false,
+    );
+
+    if (!mounted || result == null) return;
+
+    setState(() {
+      _customPenaltyText = result;
+      _penaltyOption = 'custom';
+    });
+  }
+
+  Future<void> _openCustomLateFeeSheet() async {
+    final result = await _showCustomRuleSheet(
+      title: '지각비 직접 입력',
+      description: '지각 1분마다 적용할 금액을 입력해 주세요.',
+      hint: '금액 입력',
+      note: '0원은 입력할 수 없어요. 비용이 없으면 ‘없음’을 선택해 주세요.',
+      initialText: _customLateFeeAmount,
+      isFee: true,
+    );
+
+    if (!mounted || result == null) return;
+
+    setState(() {
+      _customLateFeeAmount = result;
+      _customLateFeeInterval = '1분';
+      _lateFeeOption = 'custom';
+    });
+  }
+
+  Widget _figmaRuleChoice({
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+    double height = 40,
+    double radius = 12,
+  }) {
+    return Expanded(
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(radius),
+        child: Container(
+          height: height,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: selected ? const Color(0xFFE7F6FE) : Colors.white,
+            borderRadius: BorderRadius.circular(radius),
+            border: Border.all(
+              color: selected
+                  ? const Color(0xFF7DD3F7)
+                  : const Color(0xFFE5F2FA),
+            ),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: selected
+                  ? const Color(0xFF1685B5)
+                  : const Color(0xFF718696),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _figmaRuleSummary(String message) {
+    return Container(
+      width: double.infinity,
+      height: 42,
+      alignment: Alignment.centerLeft,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEAF7FE),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Text(
+        message,
+        style: const TextStyle(
+          fontSize: 13,
+          color: Color(0xFF1685B5),
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+
   Widget _lateFeeOptions() {
-    return Row(
+    final summary = switch (_lateFeeOption) {
+      '500' => '지각 1분당 500원',
+      '1000' => '지각 1분당 1,000원',
+      'custom' =>
+        _customLateFeeAmount.trim().isEmpty
+            ? '지각비 금액을 입력해 주세요.'
+            : '지각 1분당 ${_customLateFeeAmount.trim()}원',
+      _ => '1분당 금액을 선택해 주세요.',
+    };
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(
-          child: _smallChoice(
-            label: '1분당 1,000원',
-            hasError:
-                _showValidationErrors &&
-                _penaltyMode == 'lateFee' &&
-                _lateFeeOption.isEmpty,
-            selected: _lateFeeOption == '1000',
-            onTap: () {
-              setState(() {
+        const SizedBox(height: 12),
+        _sectionLabel('1분당 금액'),
+        const SizedBox(height: 9),
+        Row(
+          children: [
+            _figmaRuleChoice(
+              label: '500원',
+              selected: _lateFeeOption == '500',
+              onTap: () => setState(() {
+                _lateFeeOption = '500';
+              }),
+            ),
+            const SizedBox(width: 8),
+            _figmaRuleChoice(
+              label: '1,000원',
+              selected: _lateFeeOption == '1000',
+              onTap: () => setState(() {
                 _lateFeeOption = '1000';
-              });
-            },
-          ),
+              }),
+            ),
+            const SizedBox(width: 8),
+            _figmaRuleChoice(
+              label: '직접 입력',
+              selected: _lateFeeOption == 'custom',
+              onTap: _openCustomLateFeeSheet,
+            ),
+          ],
         ),
-
-        const SizedBox(width: 7),
-
-        Expanded(
-          child: _smallChoice(
-            label: '1분당 3,000원',
-            hasError:
-                _showValidationErrors &&
-                _penaltyMode == 'lateFee' &&
-                _lateFeeOption.isEmpty,
-            selected: _lateFeeOption == '3000',
-            onTap: () {
-              setState(() {
-                _lateFeeOption = '3000';
-              });
-            },
-          ),
-        ),
-
-        const SizedBox(width: 7),
-
-        Expanded(
-          child: _smallChoice(
-            label: '직접 입력',
-            hasError:
-                _showValidationErrors &&
-                _penaltyMode == 'lateFee' &&
-                _lateFeeOption.isEmpty,
-            selected: _lateFeeOption == 'custom',
-            onTap: () async {
-              setState(() {
-                _lateFeeOption = 'custom';
-              });
-
-              if (_customLateFeeAmount.isEmpty) {
-                await _showCustomLateFeeAmountSheet();
-              }
-            },
-          ),
-        ),
+        const SizedBox(height: 10),
+        _figmaRuleSummary(summary),
       ],
     );
   }
@@ -2488,29 +2927,49 @@ class _AppointmentCreateScreenState extends State<AppointmentCreateScreen> {
   // ===============================================================
 
   Widget _penaltyOptions() {
-    return Row(
+    final summary = switch (_penaltyOption) {
+      'coffee' => '지각한 사람은 커피 사기',
+      'snack' => '지각한 사람은 간식 사기',
+      'custom' =>
+        _customPenaltyText.trim().isEmpty
+            ? '벌칙을 직접 입력해 주세요.'
+            : '지각한 사람은 ${_customPenaltyText.trim()}',
+      _ => '벌칙을 선택해 주세요.',
+    };
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(
-          child: _penaltyChip(label: '커피 쏘기', value: 'coffee'),
+        const SizedBox(height: 12),
+        _sectionLabel('벌칙 선택'),
+        const SizedBox(height: 9),
+        Row(
+          children: [
+            _figmaRuleChoice(
+              label: '커피 사기',
+              selected: _penaltyOption == 'coffee',
+              onTap: () => setState(() {
+                _penaltyOption = 'coffee';
+              }),
+            ),
+            const SizedBox(width: 8),
+            _figmaRuleChoice(
+              label: '간식 사기',
+              selected: _penaltyOption == 'snack',
+              onTap: () => setState(() {
+                _penaltyOption = 'snack';
+              }),
+            ),
+            const SizedBox(width: 8),
+            _figmaRuleChoice(
+              label: '직접 입력',
+              selected: _penaltyOption == 'custom',
+              onTap: _openCustomPenaltySheet,
+            ),
+          ],
         ),
-
-        const SizedBox(width: 6),
-
-        Expanded(
-          child: _penaltyChip(label: '인생네컷', value: 'photo'),
-        ),
-
-        const SizedBox(width: 6),
-
-        Expanded(
-          child: _penaltyChip(label: '셀카 인증', value: 'selfie'),
-        ),
-
-        const SizedBox(width: 6),
-
-        Expanded(
-          child: _penaltyChip(label: '직접 입력', value: 'custom'),
-        ),
+        const SizedBox(height: 10),
+        _figmaRuleSummary(summary),
       ],
     );
   }
@@ -2756,18 +3215,20 @@ class _AppointmentCreateScreenState extends State<AppointmentCreateScreen> {
     required VoidCallback onTap,
     Color textColor = _gray,
     bool hasError = false,
+    double height = 51,
+    double radius = 18,
   }) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(radius),
       child: Container(
-        height: 48,
+        height: height,
         padding: const EdgeInsets.symmetric(horizontal: 14),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(radius),
           border: Border.all(
-            color: hasError ? Colors.red : _border,
+            color: hasError ? const Color(0xFF1685B5) : _border,
             width: hasError ? 1.5 : 1,
           ),
         ),
