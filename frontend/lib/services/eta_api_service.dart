@@ -91,6 +91,10 @@ class EtaApiService {
     );
   }
 
+  static Future<Map<String, dynamic>> leaveAppointment(int appointmentId) {
+    return _request('POST', '/appointments/$appointmentId/leave');
+  }
+
   static Future<Map<String, dynamic>> createAppointment(
     Map<String, dynamic> appointmentData,
   ) {

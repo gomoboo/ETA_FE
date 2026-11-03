@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../services/eta_api_service.dart';
-import '../services/guest_identity_service.dart';
+import 'invited_appointment_screen.dart';
 
 class AppointmentsTab extends StatefulWidget {
   const AppointmentsTab({super.key});
@@ -26,6 +26,7 @@ class _AppointmentsTabState extends State<AppointmentsTab> {
   bool checkingCode = false;
   bool joining = false;
   String? codeError;
+  bool codeNotFound = false;
 
   @override
   void initState() {
@@ -133,6 +134,7 @@ class _AppointmentsTabState extends State<AppointmentsTab> {
     if (!RegExp(r'^[A-Z0-9]{6}$').hasMatch(code)) {
       setState(() {
         codeError = '6자리 초대 코드를 입력해 주세요.';
+        codeNotFound = false;
       });
       return;
     }
@@ -140,6 +142,7 @@ class _AppointmentsTabState extends State<AppointmentsTab> {
     setState(() {
       checkingCode = true;
       codeError = null;
+      codeNotFound = false;
     });
 
     try {
@@ -147,77 +150,13 @@ class _AppointmentsTabState extends State<AppointmentsTab> {
 
       if (!mounted) return;
 
-      setState(() {
-        checkingCode = false;
-      });
-
-      // S-60 디자인 확인 전 임시 참여 확인 창
-      final confirm = await showDialog<bool>(
-        context: context,
-        builder: (dialogContext) {
-          return AlertDialog(
-            title: const Text('초대받은 약속'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  preview['title']?.toString() ?? '약속',
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Text('일시: ${formatDate(preview['meetAt'])}'),
-                const SizedBox(height: 8),
-                Text('장소: ${preview['targetPlaceName'] ?? '장소 확인 필요'}'),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(dialogContext, false),
-                child: const Text('취소'),
-              ),
-              TextButton(
-                onPressed: () => Navigator.pop(dialogContext, true),
-                child: const Text('참여하기'),
-              ),
-            ],
-          );
-        },
+      await Navigator.push(
+        context,
+        MaterialPageRoute<void>(
+          builder: (_) =>
+              InvitedAppointmentScreen(inviteCode: code, preview: preview),
+        ),
       );
-
-      if (!mounted || confirm != true) return;
-
-      setState(() {
-        joining = true;
-      });
-
-      final nickname = await GuestIdentityService.getNickname();
-
-      final joined = await EtaApiService.joinAppointment(
-        code,
-        nickname: nickname,
-      );
-
-      if (!mounted) return;
-
-      final id = toId(joined['appointmentId'] ?? preview['appointmentId']);
-
-      if (id == null) {
-        setState(() {
-          codeError =
-              '참여 결과의 약속 ID를 확인하지 못했어요. '
-              '약속 목록을 새로고침해 주세요.';
-        });
-        refresh();
-        return;
-      }
-
-      codeController.clear();
-
-      await Navigator.pushNamed(context, '/appointment-waiting', arguments: id);
 
       if (mounted) refresh();
     } catch (error) {
@@ -225,20 +164,31 @@ class _AppointmentsTabState extends State<AppointmentsTab> {
 
       final message = error.toString().toLowerCase();
 
+      final notFound =
+          message.contains('404') ||
+          message.contains('not_found') ||
+          message.contains('not found') ||
+          message.contains('invalid_invite') ||
+          message.contains('존재하지 않는 초대') ||
+          message.contains('유효하지 않은 초대');
+
+      final networkError =
+          message.contains('socketexception') ||
+          message.contains('timeoutexception') ||
+          message.contains('clientexception') ||
+          message.contains('connection refused');
+
       setState(() {
-        codeError =
-            message.contains('404') ||
-                message.contains('not_found') ||
-                message.contains('not found')
+        codeNotFound = notFound;
+        codeError = notFound
             ? '일치하는 약속이 없어요. 코드를 확인해 주세요.'
+            : networkError
+            ? '네트워크에 연결할 수 없어요. 다시 시도해 주세요.'
             : '약속 정보를 확인하지 못했어요. 다시 시도해 주세요.';
       });
     } finally {
       if (mounted) {
-        setState(() {
-          checkingCode = false;
-          joining = false;
-        });
+        setState(() => checkingCode = false);
       }
     }
   }
