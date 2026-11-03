@@ -1,7 +1,9 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+
 import 'place_search_screen.dart';
+import '../services/eta_api_service.dart';
 
 class AppointmentCreateScreen extends StatefulWidget {
   const AppointmentCreateScreen({super.key});
@@ -11,8 +13,7 @@ class AppointmentCreateScreen extends StatefulWidget {
       _AppointmentCreateScreenState();
 }
 
-class _AppointmentCreateScreenState
-    extends State<AppointmentCreateScreen> {
+class _AppointmentCreateScreenState extends State<AppointmentCreateScreen> {
   static const Color _background = Color(0xFFF7FBFF);
   static const Color _navy = Color(0xFF18354A);
   static const Color _blue = Color(0xFF1685B5);
@@ -21,25 +22,22 @@ class _AppointmentCreateScreenState
   static const Color _gray = Color(0xFF7D919F);
   static const Color _selectedBackground = Color(0xFFE2F5FC);
 
-  final TextEditingController _titleController =
-      TextEditingController();
+  final TextEditingController _titleController = TextEditingController();
 
   PlaceResult? _selectedPlace;
   DateTime? _selectedAppointmentDateTime;
   int _locationShareMinutes = 30;
 
   bool _showValidationErrors = false;
+  bool _isCreating = false;
 
   bool get _isTitleInvalid =>
-      _showValidationErrors &&
-      _titleController.text.trim().isEmpty;
+      _showValidationErrors && _titleController.text.trim().isEmpty;
 
-  bool get _isPlaceInvalid =>
-      _showValidationErrors && _selectedPlace == null;
+  bool get _isPlaceInvalid => _showValidationErrors && _selectedPlace == null;
 
   bool get _isDateTimeInvalid =>
-      _showValidationErrors &&
-      _selectedAppointmentDateTime == null;
+      _showValidationErrors && _selectedAppointmentDateTime == null;
 
   bool get _isPenaltyInvalid {
     if (!_showValidationErrors) return false;
@@ -74,7 +72,7 @@ class _AppointmentCreateScreenState
   String _customLateFeeInterval = '1분';
   String _customLateFeeAmount = '';
 
-  static const String _inviteLink = 'where.app/join/0724';
+  String _inviteLink = '';
   static const List<String> _lateFeeIntervals = [
     '1분',
     '5분',
@@ -96,26 +94,132 @@ class _AppointmentCreateScreenState
   // ===============================================================
 
   Future<void> _createAppointment() async {
+    if (_isCreating) return;
+
     setState(() {
       _showValidationErrors = true;
     });
 
-    final bool isValid =
+    final isValid =
         !_isTitleInvalid &&
         !_isPlaceInvalid &&
         !_isDateTimeInvalid &&
         !_isPenaltyInvalid;
 
-    if (!isValid) {
+    if (!isValid) return;
+
+    final place = _selectedPlace!;
+    final meetAt = _selectedAppointmentDateTime!;
+
+    if (!meetAt.isAfter(DateTime.now())) {
+      _showCreateError('현재 이후의 약속 시간을 선택해 주세요.');
       return;
     }
 
-    // TODO: 백엔드 API 연결 후 실제 약속 생성 처리
-    // TODO: 서버에서 생성된 inviteLink를 받아오도록 변경
+    String penaltyType = 'PENALTY';
+    String? penaltyContent;
+    int finePerMinute = 0;
 
-    await _showInviteSheet();
+    if (_penaltyMode == 'lateFee') {
+      penaltyType = 'FEE';
+
+      if (_lateFeeOption == 'custom' && _customLateFeeInterval != '1분') {
+        _showCreateError(
+          '현재 서버는 1분당 지각비만 지원해요. '
+          '직접 입력에서 1분을 선택해 주세요.',
+        );
+        return;
+      }
+
+      final amountText = _lateFeeOption == 'custom'
+          ? _customLateFeeAmount
+          : _lateFeeOption;
+
+      finePerMinute =
+          int.tryParse(amountText.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+
+      if (finePerMinute <= 0) {
+        _showCreateError('지각비는 0원보다 커야 해요.');
+        return;
+      }
+    } else if (_penaltyMode == 'penalty') {
+      final penaltyLabels = {
+        'coffee': '커피 쏘기',
+        'photo': '인생네컷',
+        'selfie': '셀카 인증',
+      };
+
+      penaltyContent = _penaltyOption == 'custom'
+          ? _customPenaltyText.trim()
+          : penaltyLabels[_penaltyOption];
+
+      if (penaltyContent == null || penaltyContent.isEmpty) {
+        _showCreateError('벌칙을 선택해 주세요.');
+        return;
+      }
+    }
+
+    final radarStartType = switch (_locationShareMinutes) {
+      10 => '10M_BEFORE',
+      20 => '20M_BEFORE',
+      30 => '30M_BEFORE',
+      60 => '1H_BEFORE',
+      _ => 'CUSTOM',
+    };
+
+    final requestBody = <String, dynamic>{
+      'title': _titleController.text.trim(),
+      'targetPlaceName': place.name,
+      'targetAddress': place.address,
+      'targetLatitude': place.latitude,
+      'targetLongitude': place.longitude,
+      'meetAt': meetAt.toUtc().toIso8601String(),
+      'radarStartType': radarStartType,
+      if (radarStartType == 'CUSTOM')
+        'customRadarMinutesBefore': _locationShareMinutes,
+      'penaltyType': penaltyType,
+      'penaltyContent': penaltyContent,
+      'finePerMinute': finePerMinute,
+    };
+
+    setState(() {
+      _isCreating = true;
+    });
+
+    try {
+      final response = await EtaApiService.createAppointment(requestBody);
+
+      final inviteUrl = response['inviteUrl']?.toString();
+      final appointmentId = response['appointmentId'];
+
+      if (inviteUrl == null || inviteUrl.isEmpty || appointmentId is! int) {
+        throw const FormatException('서버에서 약속 정보가 올바르게 반환되지 않았어요.');
+      }
+
+      if (!mounted) return;
+
+      setState(() {
+        _inviteLink = inviteUrl;
+      });
+
+      await _showInviteSheet();
+    } catch (error) {
+      if (!mounted) return;
+      _showCreateError('약속 생성 실패: $error');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isCreating = false;
+        });
+      }
+    }
   }
 
+  void _showCreateError(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
+  }
 
   // ===============================================================
   // 약속 생성 후 친구 초대 Overlay
@@ -140,12 +244,7 @@ class _AppointmentCreateScreenState
           child: SafeArea(
             top: false,
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(
-                24,
-                10,
-                24,
-                22,
-              ),
+              padding: const EdgeInsets.fromLTRB(24, 10, 24, 22),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -177,10 +276,7 @@ class _AppointmentCreateScreenState
 
                   const Text(
                     '친구에게 링크를 보내 함께 약속에 참여해보세요.',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: _gray,
-                    ),
+                    style: TextStyle(fontSize: 12, color: _gray),
                   ),
 
                   const SizedBox(height: 26),
@@ -259,10 +355,7 @@ class _AppointmentCreateScreenState
                       },
                       style: OutlinedButton.styleFrom(
                         foregroundColor: _navy,
-                        side: const BorderSide(
-                          color: _border,
-                          width: 1,
-                        ),
+                        side: const BorderSide(color: _border, width: 1),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(14),
                         ),
@@ -308,25 +401,18 @@ class _AppointmentCreateScreenState
     );
   }
 
-
   // ===============================================================
   // 초대 링크 복사
   // 나중에 서버에서 받은 링크로 _inviteLink 값 변경
   // ===============================================================
 
   Future<bool> _copyInviteLink() async {
-    await Clipboard.setData(
-      const ClipboardData(
-        text: _inviteLink,
-      ),
-    );
+    await Clipboard.setData(ClipboardData(text: _inviteLink));
 
-    final copiedData =
-        await Clipboard.getData(Clipboard.kTextPlain);
+    final copiedData = await Clipboard.getData(Clipboard.kTextPlain);
 
     return copiedData?.text == _inviteLink;
   }
-
 
   // ===============================================================
   // 카카오톡 공유
@@ -337,20 +423,15 @@ class _AppointmentCreateScreenState
     // TODO: 카카오 SDK 연결 후 실제 공유 기능 구현
   }
 
-
   // ===============================================================
   // 약속 생성 이후 홈으로 이동
   // ===============================================================
 
   void _goHomeAfterCreate() {
-    Navigator.of(context).pushNamedAndRemoveUntil(
-      '/',
-      (route) => false,
-    );
+    Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
   }
 
   Future<int?> _showCustomLocationTimePicker() async {
-
     int selectedMinutes = _locationShareMinutes;
 
     final controller = FixedExtentScrollController(
@@ -362,9 +443,7 @@ class _AppointmentCreateScreenState
       backgroundColor: Colors.white,
       barrierColor: Colors.black.withValues(alpha: 0.18),
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(
-          top: Radius.circular(28),
-        ),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
       builder: (sheetContext) {
         return SafeArea(
@@ -395,10 +474,7 @@ class _AppointmentCreateScreenState
                       onPressed: () {
                         Navigator.pop(sheetContext);
                       },
-                      child: const Text(
-                        '취소',
-                        style: TextStyle(color: _gray),
-                      ),
+                      child: const Text('취소', style: TextStyle(color: _gray)),
                     ),
 
                     const Text(
@@ -412,10 +488,7 @@ class _AppointmentCreateScreenState
 
                     TextButton(
                       onPressed: () {
-                        Navigator.pop(
-                          sheetContext,
-                          selectedMinutes,
-                        );
+                        Navigator.pop(sheetContext, selectedMinutes);
                       },
                       child: const Text(
                         '완료',
@@ -482,9 +555,7 @@ class _AppointmentCreateScreenState
         return Container(
           decoration: const BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.vertical(
-              top: Radius.circular(28),
-            ),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
           ),
           child: SafeArea(
             top: false,
@@ -520,10 +591,7 @@ class _AppointmentCreateScreenState
 
                   const Text(
                     '기본값은 약속 30분 전이에요.',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: _gray,
-                    ),
+                    style: TextStyle(fontSize: 13, color: _gray),
                   ),
 
                   const SizedBox(height: 20),
@@ -535,8 +603,7 @@ class _AppointmentCreateScreenState
                     (60, '1시간 전'),
                     (0, '직접 설정'),
                   ].map((option) {
-                    final isSelected =
-                        _locationShareMinutes == option.$1;
+                    final isSelected = _locationShareMinutes == option.$1;
 
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 10),
@@ -647,12 +714,7 @@ class _AppointmentCreateScreenState
                   child: SafeArea(
                     top: false,
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(
-                        24,
-                        10,
-                        24,
-                        20,
-                      ),
+                      padding: const EdgeInsets.fromLTRB(24, 10, 24, 20),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -683,10 +745,7 @@ class _AppointmentCreateScreenState
 
                           const Text(
                             '친구들이 바로 이해할 수 있게 짧게 적어주세요.',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: _gray,
-                            ),
+                            style: TextStyle(fontSize: 12, color: _gray),
                           ),
 
                           const SizedBox(height: 18),
@@ -701,10 +760,7 @@ class _AppointmentCreateScreenState
                                 draftText = value;
                               });
                             },
-                            style: const TextStyle(
-                              fontSize: 13,
-                              color: _navy,
-                            ),
+                            style: const TextStyle(fontSize: 13, color: _navy),
                             decoration: InputDecoration(
                               counterText: '',
                               hintText: '예) 지각하면 노래 한 곡 부르기',
@@ -712,8 +768,7 @@ class _AppointmentCreateScreenState
                                 fontSize: 13,
                                 color: _gray,
                               ),
-                              contentPadding:
-                                  const EdgeInsets.symmetric(
+                              contentPadding: const EdgeInsets.symmetric(
                                 horizontal: 14,
                                 vertical: 15,
                               ),
@@ -721,9 +776,7 @@ class _AppointmentCreateScreenState
                               fillColor: Colors.white,
                               enabledBorder: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(14),
-                                borderSide: const BorderSide(
-                                  color: _border,
-                                ),
+                                borderSide: const BorderSide(color: _border),
                               ),
                               focusedBorder: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(14),
@@ -756,8 +809,9 @@ class _AppointmentCreateScreenState
                               style: ElevatedButton.styleFrom(
                                 elevation: 0,
                                 backgroundColor: _blue,
-                                disabledBackgroundColor:
-                                    const Color(0xFFDDEBF2),
+                                disabledBackgroundColor: const Color(
+                                  0xFFDDEBF2,
+                                ),
                                 foregroundColor: Colors.white,
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(14),
@@ -797,8 +851,7 @@ class _AppointmentCreateScreenState
   Future<void> _showLateFeeIntervalPicker() async {
     String draftInterval = _customLateFeeInterval;
 
-    final initialIndex =
-        _lateFeeIntervals.indexOf(_customLateFeeInterval);
+    final initialIndex = _lateFeeIntervals.indexOf(_customLateFeeInterval);
 
     final scrollController = FixedExtentScrollController(
       initialItem: initialIndex < 0 ? 0 : initialIndex,
@@ -847,10 +900,7 @@ class _AppointmentCreateScreenState
                           },
                           child: const Text(
                             '취소',
-                            style: TextStyle(
-                              color: _gray,
-                              fontSize: 14,
-                            ),
+                            style: TextStyle(color: _gray, fontSize: 14),
                           ),
                         ),
                       ),
@@ -872,10 +922,7 @@ class _AppointmentCreateScreenState
                         width: 80,
                         child: TextButton(
                           onPressed: () {
-                            Navigator.pop(
-                              sheetContext,
-                              draftInterval,
-                            );
+                            Navigator.pop(sheetContext, draftInterval);
                           },
                           child: const Text(
                             '완료',
@@ -891,10 +938,7 @@ class _AppointmentCreateScreenState
                   ),
                 ),
 
-                const Divider(
-                  height: 1,
-                  color: _border,
-                ),
+                const Divider(height: 1, color: _border),
 
                 Expanded(
                   child: CupertinoPicker(
@@ -904,8 +948,7 @@ class _AppointmentCreateScreenState
                     magnification: 1.1,
                     squeeze: 1.05,
                     onSelectedItemChanged: (index) {
-                      draftInterval =
-                          _lateFeeIntervals[index];
+                      draftInterval = _lateFeeIntervals[index];
                     },
                     children: _lateFeeIntervals
                         .map(
@@ -973,12 +1016,7 @@ class _AppointmentCreateScreenState
                   child: SafeArea(
                     top: false,
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(
-                        24,
-                        10,
-                        24,
-                        20,
-                      ),
+                      padding: const EdgeInsets.fromLTRB(24, 10, 24, 20),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -989,8 +1027,7 @@ class _AppointmentCreateScreenState
                               height: 4,
                               decoration: BoxDecoration(
                                 color: _border,
-                                borderRadius:
-                                    BorderRadius.circular(2),
+                                borderRadius: BorderRadius.circular(2),
                               ),
                             ),
                           ),
@@ -1010,10 +1047,7 @@ class _AppointmentCreateScreenState
 
                           Text(
                             '$_customLateFeeInterval 기준으로 적용할 금액을 입력해주세요.',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: _gray,
-                            ),
+                            style: const TextStyle(fontSize: 12, color: _gray),
                           ),
 
                           const SizedBox(height: 18),
@@ -1053,21 +1087,16 @@ class _AppointmentCreateScreenState
                               counterText: '',
                               filled: true,
                               fillColor: Colors.white,
-                              contentPadding:
-                                  const EdgeInsets.symmetric(
+                              contentPadding: const EdgeInsets.symmetric(
                                 horizontal: 14,
                                 vertical: 15,
                               ),
                               enabledBorder: OutlineInputBorder(
-                                borderRadius:
-                                    BorderRadius.circular(14),
-                                borderSide: const BorderSide(
-                                  color: _border,
-                                ),
+                                borderRadius: BorderRadius.circular(14),
+                                borderSide: const BorderSide(color: _border),
                               ),
                               focusedBorder: OutlineInputBorder(
-                                borderRadius:
-                                    BorderRadius.circular(14),
+                                borderRadius: BorderRadius.circular(14),
                                 borderSide: const BorderSide(
                                   color: _blue,
                                   width: 1.2,
@@ -1084,9 +1113,7 @@ class _AppointmentCreateScreenState
                             child: ElevatedButton(
                               onPressed: canApply
                                   ? () {
-                                      FocusScope.of(
-                                        sheetContext,
-                                      ).unfocus();
+                                      FocusScope.of(sheetContext).unfocus();
 
                                       Navigator.pop(
                                         sheetContext,
@@ -1097,12 +1124,12 @@ class _AppointmentCreateScreenState
                               style: ElevatedButton.styleFrom(
                                 elevation: 0,
                                 backgroundColor: _blue,
-                                disabledBackgroundColor:
-                                    const Color(0xFFDDEBF2),
+                                disabledBackgroundColor: const Color(
+                                  0xFFDDEBF2,
+                                ),
                                 foregroundColor: Colors.white,
                                 shape: RoundedRectangleBorder(
-                                  borderRadius:
-                                      BorderRadius.circular(14),
+                                  borderRadius: BorderRadius.circular(14),
                                 ),
                               ),
                               child: const Text(
@@ -1162,18 +1189,14 @@ class _AppointmentCreateScreenState
       hour = 12;
     }
 
-    final month =
-      dateTime.month.toString().padLeft(2, '0');
+    final month = dateTime.month.toString().padLeft(2, '0');
 
-    final day =
-      dateTime.day.toString().padLeft(2, '0');
+    final day = dateTime.day.toString().padLeft(2, '0');
 
-    final minute =
-      dateTime.minute.toString().padLeft(2, '0');
-
+    final minute = dateTime.minute.toString().padLeft(2, '0');
 
     return '${dateTime.year}. $month. $day / '
-      '${isPm ? '오후' : '오전'} $hour:$minute';
+        '${isPm ? '오후' : '오전'} $hour:$minute';
   }
 
   // ===============================================================
@@ -1196,8 +1219,7 @@ class _AppointmentCreateScreenState
       initialItem: initialMinute,
     );
 
-    final result =
-        await showCupertinoModalPopup<_WheelTimeResult>(
+    final result = await showCupertinoModalPopup<_WheelTimeResult>(
       context: context,
       builder: (popupContext) {
         return Container(
@@ -1241,10 +1263,7 @@ class _AppointmentCreateScreenState
                           },
                           child: const Text(
                             '취소',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: _gray,
-                            ),
+                            style: TextStyle(fontSize: 14, color: _gray),
                           ),
                         ),
                       ),
@@ -1289,10 +1308,7 @@ class _AppointmentCreateScreenState
                   ),
                 ),
 
-                const Divider(
-                  height: 1,
-                  color: _border,
-                ),
+                const Divider(height: 1, color: _border),
 
                 // 시 / 분 휠
                 Expanded(
@@ -1314,28 +1330,23 @@ class _AppointmentCreateScreenState
                           onSelectedItemChanged: (index) {
                             selectedHour = index + 1;
                           },
-                          children: List.generate(
-                            12,
-                            (index) {
-                              return Center(
-                                child: Text(
-                                  '${index + 1}',
-                                  style: const TextStyle(
-                                    fontSize: 22,
-                                    fontWeight: FontWeight.w600,
-                                    color: _navy,
-                                  ),
+                          children: List.generate(12, (index) {
+                            return Center(
+                              child: Text(
+                                '${index + 1}',
+                                style: const TextStyle(
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.w600,
+                                  color: _navy,
                                 ),
-                              );
-                            },
-                          ),
+                              ),
+                            );
+                          }),
                         ),
                       ),
 
                       const Padding(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: 12,
-                        ),
+                        padding: EdgeInsets.symmetric(horizontal: 12),
                         child: Text(
                           ':',
                           style: TextStyle(
@@ -1361,23 +1372,18 @@ class _AppointmentCreateScreenState
                           onSelectedItemChanged: (index) {
                             selectedMinute = index;
                           },
-                          children: List.generate(
-                            60,
-                            (index) {
-                              return Center(
-                                child: Text(
-                                  index
-                                      .toString()
-                                      .padLeft(2, '0'),
-                                  style: const TextStyle(
-                                    fontSize: 22,
-                                    fontWeight: FontWeight.w600,
-                                    color: _navy,
-                                  ),
+                          children: List.generate(60, (index) {
+                            return Center(
+                              child: Text(
+                                index.toString().padLeft(2, '0'),
+                                style: const TextStyle(
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.w600,
+                                  color: _navy,
                                 ),
-                              );
-                            },
-                          ),
+                              ),
+                            );
+                          }),
                         ),
                       ),
                     ],
@@ -1401,14 +1407,9 @@ class _AppointmentCreateScreenState
   // ===============================================================
 
   Future<void> _showDateTimeSheet() async {
-    DateTime selectedDate =
-      _selectedAppointmentDateTime ??
-      DateTime.now();
+    DateTime selectedDate = _selectedAppointmentDateTime ?? DateTime.now();
 
-    DateTime visibleMonth = DateTime(
-      selectedDate.year,
-      selectedDate.month,
-    );
+    DateTime visibleMonth = DateTime(selectedDate.year, selectedDate.month);
 
     bool isPm = selectedDate.hour >= 12;
 
@@ -1422,21 +1423,15 @@ class _AppointmentCreateScreenState
 
     bool showPastTimeError = false;
 
-    final result =
-        await showModalBottomSheet<DateTime>(
+    final result = await showModalBottomSheet<DateTime>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      barrierColor:
-          Colors.black.withValues(alpha: 0.18),
+      barrierColor: Colors.black.withValues(alpha: 0.18),
       builder: (sheetContext) {
         return StatefulBuilder(
           builder: (context, setModalState) {
-            final firstDay = DateTime(
-              visibleMonth.year,
-              visibleMonth.month,
-              1,
-            );
+            final firstDay = DateTime(visibleMonth.year, visibleMonth.month, 1);
 
             final daysInMonth = DateTime(
               visibleMonth.year,
@@ -1444,8 +1439,7 @@ class _AppointmentCreateScreenState
               0,
             ).day;
 
-            final leadingEmpty =
-                firstDay.weekday % 7;
+            final leadingEmpty = firstDay.weekday % 7;
 
             return Align(
               alignment: Alignment.bottomCenter,
@@ -1455,22 +1449,16 @@ class _AppointmentCreateScreenState
                 decoration: const BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.only(
-                    topLeft:
-                        Radius.circular(28),
-                    topRight:
-                        Radius.circular(28),
+                    topLeft: Radius.circular(28),
+                    topRight: Radius.circular(28),
                   ),
                 ),
                 child: SafeArea(
                   top: false,
                   child: Padding(
-                    padding:
-                        const EdgeInsets.symmetric(
-                      horizontal: 24,
-                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
                     child: Column(
-                      crossAxisAlignment:
-                          CrossAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         // =============================================
                         // 핸들
@@ -1482,14 +1470,9 @@ class _AppointmentCreateScreenState
                           child: Container(
                             width: 40,
                             height: 4,
-                            decoration:
-                                BoxDecoration(
+                            decoration: BoxDecoration(
                               color: _border,
-                              borderRadius:
-                                  BorderRadius
-                                      .circular(
-                                2,
-                              ),
+                              borderRadius: BorderRadius.circular(2),
                             ),
                           ),
                         ),
@@ -1499,13 +1482,11 @@ class _AppointmentCreateScreenState
                         // =============================================
                         // 제목
                         // =============================================
-
                         const Text(
                           '날짜 · 시간 선택',
                           style: TextStyle(
                             fontSize: 17,
-                            fontWeight:
-                                FontWeight.w700,
+                            fontWeight: FontWeight.w700,
                             color: _navy,
                           ),
                         ),
@@ -1515,80 +1496,58 @@ class _AppointmentCreateScreenState
                         // =============================================
                         // 월 이동
                         // =============================================
-
                         SizedBox(
                           height: 28,
                           child: Row(
-                            mainAxisAlignment:
-                                MainAxisAlignment
-                                    .center,
+                            mainAxisAlignment: MainAxisAlignment.center,
                             children: [
                               InkWell(
                                 onTap: () {
                                   setModalState(() {
-                                    visibleMonth =
-                                        DateTime(
-                                      visibleMonth
-                                          .year,
-                                      visibleMonth
-                                              .month -
-                                          1,
+                                    visibleMonth = DateTime(
+                                      visibleMonth.year,
+                                      visibleMonth.month - 1,
                                     );
                                   });
                                 },
-                                child:
-                                    const SizedBox(
+                                child: const SizedBox(
                                   width: 28,
                                   height: 28,
                                   child: Icon(
-                                    Icons
-                                        .chevron_left_rounded,
+                                    Icons.chevron_left_rounded,
                                     size: 17,
                                     color: _navy,
                                   ),
                                 ),
                               ),
 
-                              const SizedBox(
-                                width: 7,
-                              ),
+                              const SizedBox(width: 7),
 
                               Text(
                                 '${visibleMonth.year}년 ${visibleMonth.month}월',
-                                style:
-                                    const TextStyle(
+                                style: const TextStyle(
                                   fontSize: 14,
-                                  fontWeight:
-                                      FontWeight
-                                          .w700,
+                                  fontWeight: FontWeight.w700,
                                   color: _navy,
                                 ),
                               ),
 
-                              const SizedBox(
-                                width: 7,
-                              ),
+                              const SizedBox(width: 7),
 
                               InkWell(
                                 onTap: () {
                                   setModalState(() {
-                                    visibleMonth =
-                                        DateTime(
-                                      visibleMonth
-                                          .year,
-                                      visibleMonth
-                                              .month +
-                                          1,
+                                    visibleMonth = DateTime(
+                                      visibleMonth.year,
+                                      visibleMonth.month + 1,
                                     );
                                   });
                                 },
-                                child:
-                                    const SizedBox(
+                                child: const SizedBox(
                                   width: 28,
                                   height: 28,
                                   child: Icon(
-                                    Icons
-                                        .chevron_right_rounded,
+                                    Icons.chevron_right_rounded,
                                     size: 17,
                                     color: _navy,
                                   ),
@@ -1603,7 +1562,6 @@ class _AppointmentCreateScreenState
                         // =============================================
                         // 달력
                         // =============================================
-
                         SizedBox(
                           width: double.infinity,
                           height: 171,
@@ -1613,135 +1571,75 @@ class _AppointmentCreateScreenState
                                 height: 20,
                                 child: Row(
                                   children: [
-                                    _CalendarWeekday(
-                                      '일',
-                                    ),
-                                    _CalendarWeekday(
-                                      '월',
-                                    ),
-                                    _CalendarWeekday(
-                                      '화',
-                                    ),
-                                    _CalendarWeekday(
-                                      '수',
-                                    ),
-                                    _CalendarWeekday(
-                                      '목',
-                                    ),
-                                    _CalendarWeekday(
-                                      '금',
-                                    ),
-                                    _CalendarWeekday(
-                                      '토',
-                                    ),
+                                    _CalendarWeekday('일'),
+                                    _CalendarWeekday('월'),
+                                    _CalendarWeekday('화'),
+                                    _CalendarWeekday('수'),
+                                    _CalendarWeekday('목'),
+                                    _CalendarWeekday('금'),
+                                    _CalendarWeekday('토'),
                                   ],
                                 ),
                               ),
 
-                              const SizedBox(
-                                height: 3,
-                              ),
+                              const SizedBox(height: 3),
 
                               Expanded(
-                                child:
-                                    GridView.builder(
-                                  padding:
-                                      EdgeInsets.zero,
-                                  physics:
-                                      const NeverScrollableScrollPhysics(),
+                                child: GridView.builder(
+                                  padding: EdgeInsets.zero,
+                                  physics: const NeverScrollableScrollPhysics(),
                                   gridDelegate:
                                       const SliverGridDelegateWithFixedCrossAxisCount(
-                                    crossAxisCount:
-                                        7,
-                                    childAspectRatio:
-                                        1.8,
-                                  ),
-                                  itemCount:
-                                      leadingEmpty +
-                                          daysInMonth,
-                                  itemBuilder:
-                                      (context,
-                                          index) {
-                                    if (index <
-                                        leadingEmpty) {
+                                        crossAxisCount: 7,
+                                        childAspectRatio: 1.8,
+                                      ),
+                                  itemCount: leadingEmpty + daysInMonth,
+                                  itemBuilder: (context, index) {
+                                    if (index < leadingEmpty) {
                                       return const SizedBox();
                                     }
 
-                                    final day =
-                                        index -
-                                            leadingEmpty +
-                                            1;
+                                    final day = index - leadingEmpty + 1;
 
                                     final isSelected =
-                                        selectedDate
-                                                    .year ==
-                                                visibleMonth
-                                                    .year &&
-                                            selectedDate
-                                                    .month ==
-                                                visibleMonth
-                                                    .month &&
-                                            selectedDate
-                                                    .day ==
-                                                day;
+                                        selectedDate.year ==
+                                            visibleMonth.year &&
+                                        selectedDate.month ==
+                                            visibleMonth.month &&
+                                        selectedDate.day == day;
 
                                     return InkWell(
                                       onTap: () {
-                                        setModalState(
-                                            () {
-                                          selectedDate =
-                                              DateTime(
-                                            visibleMonth
-                                                .year,
-                                            visibleMonth
-                                                .month,
+                                        setModalState(() {
+                                          selectedDate = DateTime(
+                                            visibleMonth.year,
+                                            visibleMonth.month,
                                             day,
-                                            selectedDate
-                                                .hour,
-                                            selectedDate
-                                                .minute,
+                                            selectedDate.hour,
+                                            selectedDate.minute,
                                           );
                                         });
                                       },
-                                      borderRadius:
-                                          BorderRadius
-                                              .circular(
-                                        20,
-                                      ),
+                                      borderRadius: BorderRadius.circular(20),
                                       child: Center(
-                                        child:
-                                            Container(
+                                        child: Container(
                                           width: 30,
                                           height: 30,
-                                          alignment:
-                                              Alignment
-                                                  .center,
-                                          decoration:
-                                              BoxDecoration(
+                                          alignment: Alignment.center,
+                                          decoration: BoxDecoration(
                                             color: isSelected
                                                 ? _selectedBackground
-                                                : Colors
-                                                    .transparent,
-                                            shape:
-                                                BoxShape
-                                                    .circle,
+                                                : Colors.transparent,
+                                            shape: BoxShape.circle,
                                           ),
                                           child: Text(
                                             '$day',
-                                            style:
-                                                TextStyle(
-                                              fontSize:
-                                                  12,
-                                              fontWeight:
-                                                  isSelected
-                                                      ? FontWeight
-                                                          .w700
-                                                      : FontWeight
-                                                          .w400,
-                                              color:
-                                                  isSelected
-                                                      ? _blue
-                                                      : _navy,
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: isSelected
+                                                  ? FontWeight.w700
+                                                  : FontWeight.w400,
+                                              color: isSelected ? _blue : _navy,
                                             ),
                                           ),
                                         ),
@@ -1756,24 +1654,18 @@ class _AppointmentCreateScreenState
 
                         const SizedBox(height: 12),
 
-                        const Divider(
-                          height: 1,
-                          thickness: 1,
-                          color: _border,
-                        ),
+                        const Divider(height: 1, thickness: 1, color: _border),
 
                         const SizedBox(height: 18),
 
                         // =============================================
                         // 시간
                         // =============================================
-
                         const Text(
                           '시간',
                           style: TextStyle(
                             fontSize: 12,
-                            fontWeight:
-                                FontWeight.w700,
+                            fontWeight: FontWeight.w700,
                             color: _navy,
                           ),
                         ),
@@ -1783,13 +1675,11 @@ class _AppointmentCreateScreenState
                         // =============================================
                         // 오전 / 오후 / 시간
                         // =============================================
-
                         Row(
                           children: [
                             SizedBox(
                               width: 80,
-                              child:
-                                  _timeChoiceButton(
+                              child: _timeChoiceButton(
                                 label: '오전',
                                 selected: !isPm,
                                 onTap: () {
@@ -1800,14 +1690,11 @@ class _AppointmentCreateScreenState
                               ),
                             ),
 
-                            const SizedBox(
-                              width: 10,
-                            ),
+                            const SizedBox(width: 10),
 
                             SizedBox(
                               width: 80,
-                              child:
-                                  _timeChoiceButton(
+                              child: _timeChoiceButton(
                                 label: '오후',
                                 selected: isPm,
                                 onTap: () {
@@ -1818,112 +1705,68 @@ class _AppointmentCreateScreenState
                               ),
                             ),
 
-                            const SizedBox(
-                              width: 12,
-                            ),
+                            const SizedBox(width: 12),
 
                             // =========================================
                             // 시간 선택창
                             // =========================================
-
                             InkWell(
                               onTap: () async {
-                                final picked =
-                                    await _showWheelTimePicker(
-                                  context:
-                                      context,
-                                  initialHour:
-                                      selectedHour12,
-                                  initialMinute:
-                                      selectedMinute,
+                                final picked = await _showWheelTimePicker(
+                                  context: context,
+                                  initialHour: selectedHour12,
+                                  initialMinute: selectedMinute,
                                 );
 
                                 if (picked != null) {
                                   setModalState(() {
-                                    selectedHour12 =
-                                        picked.hour;
+                                    selectedHour12 = picked.hour;
 
-                                    selectedMinute =
-                                        picked.minute;
+                                    selectedMinute = picked.minute;
                                   });
                                 }
                               },
-                              borderRadius:
-                                  BorderRadius
-                                      .circular(
-                                14,
-                              ),
+                              borderRadius: BorderRadius.circular(14),
                               child: Container(
                                 width: 160,
                                 height: 44,
-                                alignment:
-                                    Alignment.center,
-                                decoration:
-                                    BoxDecoration(
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(
                                   color: Colors.white,
-                                  borderRadius:
-                                      BorderRadius
-                                          .circular(
-                                    14,
-                                  ),
-                                  border:
-                                      Border.all(
-                                    color: _border,
-                                    width: 1,
-                                  ),
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(color: _border, width: 1),
                                 ),
                                 child: Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment
-                                          .center,
+                                  mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
                                     Text(
                                       '$selectedHour12',
-                                      style:
-                                          const TextStyle(
+                                      style: const TextStyle(
                                         fontSize: 14,
-                                        fontWeight:
-                                            FontWeight
-                                                .w700,
+                                        fontWeight: FontWeight.w700,
                                         color: _navy,
                                       ),
                                     ),
 
                                     const Padding(
-                                      padding:
-                                          EdgeInsets
-                                              .symmetric(
-                                        horizontal:
-                                            8,
+                                      padding: EdgeInsets.symmetric(
+                                        horizontal: 8,
                                       ),
                                       child: Text(
                                         ':',
-                                        style:
-                                            TextStyle(
-                                          fontSize:
-                                              14,
-                                          fontWeight:
-                                              FontWeight
-                                                  .w700,
-                                          color:
-                                              _navy,
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w700,
+                                          color: _navy,
                                         ),
                                       ),
                                     ),
 
                                     Text(
-                                      selectedMinute
-                                          .toString()
-                                          .padLeft(
-                                            2,
-                                            '0',
-                                          ),
-                                      style:
-                                          const TextStyle(
+                                      selectedMinute.toString().padLeft(2, '0'),
+                                      style: const TextStyle(
                                         fontSize: 14,
-                                        fontWeight:
-                                            FontWeight
-                                                .w700,
+                                        fontWeight: FontWeight.w700,
                                         color: _navy,
                                       ),
                                     ),
@@ -1939,81 +1782,53 @@ class _AppointmentCreateScreenState
                         // =============================================
                         // 취소 / 선택 완료
                         // =============================================
-
                         Row(
                           children: [
                             SizedBox(
                               width: 160,
                               height: 44,
-                              child:
-                                  OutlinedButton(
+                              child: OutlinedButton(
                                 onPressed: () {
-                                  Navigator.pop(
-                                    sheetContext,
-                                  );
+                                  Navigator.pop(sheetContext);
                                 },
-                                style:
-                                    OutlinedButton
-                                        .styleFrom(
-                                  padding:
-                                      EdgeInsets
-                                          .zero,
-                                  side:
-                                      const BorderSide(
-                                    color:
-                                        _border,
+                                style: OutlinedButton.styleFrom(
+                                  padding: EdgeInsets.zero,
+                                  side: const BorderSide(
+                                    color: _border,
                                     width: 1,
                                   ),
-                                  shape:
-                                      RoundedRectangleBorder(
-                                    borderRadius:
-                                        BorderRadius
-                                            .circular(
-                                      14,
-                                    ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14),
                                   ),
                                 ),
-                                child:
-                                    const Text(
+                                child: const Text(
                                   '취소',
-                                  style:
-                                      TextStyle(
+                                  style: TextStyle(
                                     fontSize: 13,
-                                    fontWeight:
-                                        FontWeight
-                                            .w700,
-                                    color:
-                                        _navy,
+                                    fontWeight: FontWeight.w700,
+                                    color: _navy,
                                   ),
                                 ),
                               ),
                             ),
 
-                            const SizedBox(
-                              width: 22,
-                            ),
+                            const SizedBox(width: 22),
 
                             SizedBox(
                               width: 160,
                               height: 44,
-                              child:
-                                  ElevatedButton(
+                              child: ElevatedButton(
                                 onPressed: () {
                                   int hour24;
 
                                   if (isPm) {
-                                    hour24 =
-                                        selectedHour12 ==
-                                                12
-                                            ? 12
-                                            : selectedHour12 +
-                                                12;
+                                    hour24 = selectedHour12 == 12
+                                        ? 12
+                                        : selectedHour12 + 12;
                                   } else {
-                                    hour24 =
-                                        selectedHour12 ==
-                                                12
-                                            ? 0
-                                            : selectedHour12;
+                                    hour24 = selectedHour12 == 12
+                                        ? 0
+                                        : selectedHour12;
                                   }
 
                                   final appointmentDateTime = DateTime(
@@ -2024,7 +1839,9 @@ class _AppointmentCreateScreenState
                                     selectedMinute,
                                   );
 
-                                  if (appointmentDateTime.isBefore(DateTime.now())) {
+                                  if (appointmentDateTime.isBefore(
+                                    DateTime.now(),
+                                  )) {
                                     setModalState(() {
                                       showPastTimeError = true;
                                     });
@@ -2036,36 +1853,20 @@ class _AppointmentCreateScreenState
                                     appointmentDateTime,
                                   );
                                 },
-                                style:
-                                    ElevatedButton
-                                        .styleFrom(
-                                  padding:
-                                      EdgeInsets
-                                          .zero,
+                                style: ElevatedButton.styleFrom(
+                                  padding: EdgeInsets.zero,
                                   elevation: 0,
-                                  backgroundColor:
-                                      _blue,
-                                  foregroundColor:
-                                      Colors
-                                          .white,
-                                  shape:
-                                      RoundedRectangleBorder(
-                                    borderRadius:
-                                        BorderRadius
-                                            .circular(
-                                      14,
-                                    ),
+                                  backgroundColor: _blue,
+                                  foregroundColor: Colors.white,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14),
                                   ),
                                 ),
-                                child:
-                                    const Text(
+                                child: const Text(
                                   '선택 완료',
-                                  style:
-                                      TextStyle(
+                                  style: TextStyle(
                                     fontSize: 13,
-                                    fontWeight:
-                                        FontWeight
-                                            .w700,
+                                    fontWeight: FontWeight.w700,
                                   ),
                                 ),
                               ),
@@ -2120,8 +1921,7 @@ class _AppointmentCreateScreenState
 
     if (result != null) {
       setState(() {
-        _selectedAppointmentDateTime =
-            result;
+        _selectedAppointmentDateTime = result;
       });
     }
   }
@@ -2142,24 +1942,16 @@ class _AppointmentCreateScreenState
         height: 44,
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color:
-              selected ? _blue : Colors.white,
-          borderRadius:
-              BorderRadius.circular(14),
-          border: Border.all(
-            color:
-                selected ? _blue : _border,
-            width: 1,
-          ),
+          color: selected ? _blue : Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: selected ? _blue : _border, width: 1),
         ),
         child: Text(
           label,
           style: TextStyle(
             fontSize: 13,
             fontWeight: FontWeight.w700,
-            color: selected
-                ? Colors.white
-                : _navy,
+            color: selected ? Colors.white : _navy,
           ),
         ),
       ),
@@ -2179,29 +1971,18 @@ class _AppointmentCreateScreenState
           children: [
             // 상단 헤더
             Padding(
-              padding:
-                  const EdgeInsets.fromLTRB(
-                24,
-                22,
-                24,
-                12,
-              ),
+              padding: const EdgeInsets.fromLTRB(24, 22, 24, 12),
               child: Row(
                 children: [
                   InkWell(
                     onTap: () {
                       Navigator.of(context).pop();
                     },
-                    borderRadius:
-                        BorderRadius.circular(
-                      20,
-                    ),
+                    borderRadius: BorderRadius.circular(20),
                     child: const Padding(
-                      padding:
-                          EdgeInsets.all(2),
+                      padding: EdgeInsets.all(2),
                       child: Icon(
-                        Icons
-                            .arrow_back_ios_new_rounded,
+                        Icons.arrow_back_ios_new_rounded,
                         size: 18,
                         color: _blue,
                       ),
@@ -2214,8 +1995,7 @@ class _AppointmentCreateScreenState
                     '약속 만들기',
                     style: TextStyle(
                       fontSize: 17,
-                      fontWeight:
-                          FontWeight.w700,
+                      fontWeight: FontWeight.w700,
                       color: _navy,
                     ),
                   ),
@@ -2224,23 +2004,13 @@ class _AppointmentCreateScreenState
             ),
 
             Expanded(
-              child:
-                  SingleChildScrollView(
-                padding:
-                    const EdgeInsets.fromLTRB(
-                  24,
-                  12,
-                  24,
-                  24,
-                ),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
                 child: Column(
-                  crossAxisAlignment:
-                      CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     // 약속 이름
-                    _sectionLabel(
-                      '약속 이름',
-                    ),
+                    _sectionLabel('약속 이름'),
 
                     const SizedBox(height: 8),
 
@@ -2251,31 +2021,21 @@ class _AppointmentCreateScreenState
                           setState(() {});
                         }
                       },
-                      style: const TextStyle(
-                        fontSize: 13,
-                        color: _navy,
-                      ),
+                      style: const TextStyle(fontSize: 13, color: _navy),
                       decoration: _inputDecoration().copyWith(
                         hintText: '약속 이름을 입력해 주세요',
-                        hintStyle: const TextStyle(
-                          fontSize: 13,
-                          color: _gray,
-                        ),
+                        hintStyle: const TextStyle(fontSize: 13, color: _gray),
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(14),
                           borderSide: BorderSide(
-                            color: _isTitleInvalid
-                                ? Colors.red
-                                : _border,
+                            color: _isTitleInvalid ? Colors.red : _border,
                             width: _isTitleInvalid ? 1.5 : 1,
                           ),
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(14),
                           borderSide: BorderSide(
-                            color: _isTitleInvalid
-                                ? Colors.red
-                                : _blue,
+                            color: _isTitleInvalid ? Colors.red : _blue,
                             width: 1.5,
                           ),
                         ),
@@ -2286,54 +2046,38 @@ class _AppointmentCreateScreenState
                       const SizedBox(height: 6),
                       const Text(
                         '입력이 완료되지 않았습니다.',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: Colors.red,
-                        ),
+                        style: TextStyle(fontSize: 11, color: Colors.red),
                       ),
                     ],
 
                     const SizedBox(height: 17),
 
                     // 약속 장소
-                    _sectionLabel(
-                      '약속 장소',
-                    ),
+                    _sectionLabel('약속 장소'),
 
                     const SizedBox(height: 8),
 
                     _tapField(
                       hasError: _isPlaceInvalid,
-                      icon:
-                          Icons.search_rounded,
-                      text:
-                          _selectedPlace?.name ??
-                              '장소 검색',
-                      textColor:
-                        _selectedPlace == null ? _gray : _navy,
-                      trailing:
-                          const Icon(
-                        Icons
-                            .location_on_outlined,
+                      icon: Icons.search_rounded,
+                      text: _selectedPlace?.name ?? '장소 검색',
+                      textColor: _selectedPlace == null ? _gray : _navy,
+                      trailing: const Icon(
+                        Icons.location_on_outlined,
                         size: 21,
                         color: _blue,
                       ),
                       onTap: () async {
-                        final result =
-                            await Navigator.of(
-                          context,
-                        ).push<PlaceResult>(
-                          MaterialPageRoute(
-                            builder:
-                                (context) =>
-                                    const PlaceSearchScreen(),
-                          ),
-                        );
+                        final result = await Navigator.of(context)
+                            .push<PlaceResult>(
+                              MaterialPageRoute(
+                                builder: (context) => const PlaceSearchScreen(),
+                              ),
+                            );
 
                         if (result != null) {
                           setState(() {
-                            _selectedPlace =
-                                result;
+                            _selectedPlace = result;
                           });
                         }
                       },
@@ -2344,45 +2088,33 @@ class _AppointmentCreateScreenState
                       const SizedBox(height: 6),
                       const Text(
                         '입력이 완료되지 않았습니다.',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: Colors.red,
-                        ),
+                        style: TextStyle(fontSize: 11, color: Colors.red),
                       ),
                     ],
 
                     const SizedBox(height: 17),
 
                     // 날짜 · 시간
-                    _sectionLabel(
-                      '날짜 · 시간',
-                    ),
+                    _sectionLabel('날짜 · 시간'),
 
                     const SizedBox(height: 8),
 
                     _tapField(
                       hasError: _isDateTimeInvalid,
-                      text:
-                          _selectedAppointmentDateTime ==
-                                  null
-                              ? '날짜 설정 / 시간 설정'
-                              : _formatAppointmentDateTime(
-                                  _selectedAppointmentDateTime!,
-                                ),
-                      textColor:
-                          _selectedAppointmentDateTime == 
-                                  null
-                              ? _gray
-                              : _navy,
-                      trailing:
-                          const Icon(
-                        Icons
-                            .calendar_today_outlined,
+                      text: _selectedAppointmentDateTime == null
+                          ? '날짜 설정 / 시간 설정'
+                          : _formatAppointmentDateTime(
+                              _selectedAppointmentDateTime!,
+                            ),
+                      textColor: _selectedAppointmentDateTime == null
+                          ? _gray
+                          : _navy,
+                      trailing: const Icon(
+                        Icons.calendar_today_outlined,
                         size: 18,
                         color: _gray,
                       ),
-                                            onTap:
-                          _showDateTimeSheet,
+                      onTap: _showDateTimeSheet,
                     ),
 
                     // 날짜·시간 미입력 경고
@@ -2390,31 +2122,24 @@ class _AppointmentCreateScreenState
                       const SizedBox(height: 6),
                       const Text(
                         '입력이 완료되지 않았습니다.',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: Colors.red,
-                        ),
+                        style: TextStyle(fontSize: 11, color: Colors.red),
                       ),
                     ],
 
                     const SizedBox(height: 17),
 
                     // 위치 공유
-                    _sectionLabel(
-                      '위치 공유 시작',
-                    ),
+                    _sectionLabel('위치 공유 시작'),
 
                     const SizedBox(height: 8),
 
                     _tapField(
                       text: _locationShareMinutes == 60
-                        ? '약속 1시간 전'
-                        : '약속 $_locationShareMinutes분 전',
+                          ? '약속 1시간 전'
+                          : '약속 $_locationShareMinutes분 전',
                       textColor: _navy,
-                      trailing:
-                          const Icon(
-                        Icons
-                            .chevron_right_rounded,
+                      trailing: const Icon(
+                        Icons.chevron_right_rounded,
                         size: 19,
                         color: _gray,
                       ),
@@ -2425,9 +2150,7 @@ class _AppointmentCreateScreenState
 
                     // 페널티 설정
                     // 페널티 설정
-                    _sectionLabel(
-                      '페널티 설정',
-                    ),
+                    _sectionLabel('페널티 설정'),
 
                     const SizedBox(height: 9),
 
@@ -2488,100 +2211,62 @@ class _AppointmentCreateScreenState
                     const SizedBox(height: 18),
 
                     // 초대 링크
-                    _sectionLabel(
-                      '초대 링크',
-                    ),
+                    _sectionLabel('초대 링크'),
 
                     const SizedBox(height: 8),
 
                     Container(
                       height: 48,
-                      padding:
-                          const EdgeInsets
-                              .fromLTRB(
-                        14,
-                        5,
-                        6,
-                        5,
-                      ),
-                      decoration:
-                          BoxDecoration(
+                      padding: const EdgeInsets.fromLTRB(14, 5, 6, 5),
+                      decoration: BoxDecoration(
                         color: Colors.white,
-                        borderRadius:
-                            BorderRadius
-                                .circular(
-                          14,
-                        ),
-                        border:
-                            Border.all(
-                          color: _border,
-                        ),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: _border),
                       ),
                       child: Row(
                         children: [
                           const Expanded(
                             child: Text(
                               'where.app/join/0724',
-                              style:
-                                  TextStyle(
-                                fontSize: 13,
-                                color: _navy,
-                              ),
+                              style: TextStyle(fontSize: 13, color: _navy),
                             ),
                           ),
 
                           SizedBox(
                             height: 36,
-                            child:
-                                ElevatedButton(
-                                  onPressed: () async {
-                                    await Clipboard.setData(
-                                      const ClipboardData(
-                                        text: 'where.app/join/0724',
-                                      ),
-                                    );
-
-                                    if (!context.mounted) return;
-
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text('초대 링크가 복사됐어요.'),
-                                        duration: Duration(seconds: 2),
-                                      ),
-                                    );
-                                  },
-                              style:
-                                  ElevatedButton
-                                      .styleFrom(
-                                elevation: 0,
-                                backgroundColor:
-                                    _navy,
-                                foregroundColor:
-                                    Colors.white,
-                                padding:
-                                    const EdgeInsets
-                                        .symmetric(
-                                  horizontal:
-                                      16,
-                                ),
-                                shape:
-                                    RoundedRectangleBorder(
-                                  borderRadius:
-                                      BorderRadius
-                                          .circular(
-                                    11,
+                            child: ElevatedButton(
+                              onPressed: () async {
+                                await Clipboard.setData(
+                                  const ClipboardData(
+                                    text: 'where.app/join/0724',
                                   ),
+                                );
+
+                                if (!context.mounted) return;
+
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('초대 링크가 복사됐어요.'),
+                                    duration: Duration(seconds: 2),
+                                  ),
+                                );
+                              },
+                              style: ElevatedButton.styleFrom(
+                                elevation: 0,
+                                backgroundColor: _navy,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(11),
                                 ),
                               ),
-                              child:
-                                  const Text(
+                              child: const Text(
                                 '복사하기',
-                                style:
-                                    TextStyle(
+                                style: TextStyle(
                                   fontSize: 12,
-                                  fontWeight:
-                                      FontWeight
-                                          .w700,
+                                  fontWeight: FontWeight.w700,
                                 ),
                               ),
                             ),
@@ -2595,49 +2280,32 @@ class _AppointmentCreateScreenState
                     const Text(
                       '위치는 약속 30분 전부터 공유돼요.\n'
                       '지각비는 참여자가 동의한 규칙으로 계산해요.',
-                      style: TextStyle(
-                        fontSize: 11,
-                        height: 1.5,
-                        color: _gray,
-                      ),
+                      style: TextStyle(fontSize: 11, height: 1.5, color: _gray),
                     ),
 
                     const SizedBox(height: 26),
 
                     SizedBox(
-                      width:
-                          double.infinity,
+                      width: double.infinity,
                       height: 52,
-                      child:
-                          ElevatedButton(
-                              onPressed: _createAppointment,
-                            style:
-                                ElevatedButton
-                                    .styleFrom(
-                                      elevation: 0,
-                                      backgroundColor:
-                                          _buttonBlue,
-                                      foregroundColor:
-                                          _navy,
-                                      shape:
-                                          RoundedRectangleBorder(
-                                        borderRadius:
-                                            BorderRadius
-                                                .circular(
-                                                  14,
-                                            ),
-                                          ),
-                              ),
-                            child: const Text(
-                              '약속 만들고 초대하기',
-                              style: TextStyle(
-                                fontSize: 15,
-                                fontWeight:
-                                    FontWeight
-                                        .w700,
-                              ),
-                            ),
+                      child: ElevatedButton(
+                        onPressed: _createAppointment,
+                        style: ElevatedButton.styleFrom(
+                          elevation: 0,
+                          backgroundColor: _buttonBlue,
+                          foregroundColor: _navy,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
                           ),
+                        ),
+                        child: const Text(
+                          '약속 만들고 초대하기',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
                     ),
                     const SizedBox(height: 12),
                   ],
@@ -2660,11 +2328,11 @@ class _AppointmentCreateScreenState
         Expanded(
           child: _smallChoice(
             label: '1분당 1,000원',
-            hasError: _showValidationErrors &&
-              _penaltyMode == 'lateFee' &&
-              _lateFeeOption.isEmpty,
-            selected:
-                _lateFeeOption == '1000',
+            hasError:
+                _showValidationErrors &&
+                _penaltyMode == 'lateFee' &&
+                _lateFeeOption.isEmpty,
+            selected: _lateFeeOption == '1000',
             onTap: () {
               setState(() {
                 _lateFeeOption = '1000';
@@ -2678,11 +2346,11 @@ class _AppointmentCreateScreenState
         Expanded(
           child: _smallChoice(
             label: '1분당 3,000원',
-            hasError: _showValidationErrors &&
-              _penaltyMode == 'lateFee' &&
-              _lateFeeOption.isEmpty,
-            selected:
-                _lateFeeOption == '3000',
+            hasError:
+                _showValidationErrors &&
+                _penaltyMode == 'lateFee' &&
+                _lateFeeOption.isEmpty,
+            selected: _lateFeeOption == '3000',
             onTap: () {
               setState(() {
                 _lateFeeOption = '3000';
@@ -2696,11 +2364,11 @@ class _AppointmentCreateScreenState
         Expanded(
           child: _smallChoice(
             label: '직접 입력',
-            hasError: _showValidationErrors &&
-              _penaltyMode == 'lateFee' &&
-              _lateFeeOption.isEmpty,
-            selected:
-                _lateFeeOption == 'custom',
+            hasError:
+                _showValidationErrors &&
+                _penaltyMode == 'lateFee' &&
+                _lateFeeOption.isEmpty,
+            selected: _lateFeeOption == 'custom',
             onTap: () async {
               setState(() {
                 _lateFeeOption = 'custom';
@@ -2717,10 +2385,9 @@ class _AppointmentCreateScreenState
   }
 
   Widget _customLateFeeDisplayField() {
-    final intervalLabel =
-        _customLateFeeInterval == '1시간 이상'
-            ? '1시간 이상'
-            : '$_customLateFeeInterval당';
+    final intervalLabel = _customLateFeeInterval == '1시간 이상'
+        ? '1시간 이상'
+        : '$_customLateFeeInterval당';
 
     return Container(
       width: double.infinity,
@@ -2729,13 +2396,15 @@ class _AppointmentCreateScreenState
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
-          color: _showValidationErrors &&
+          color:
+              _showValidationErrors &&
                   _penaltyMode == 'lateFee' &&
                   _lateFeeOption == 'custom' &&
                   _customLateFeeAmount.trim().isEmpty
               ? Colors.red
               : _border,
-          width: _showValidationErrors &&
+          width:
+              _showValidationErrors &&
                   _penaltyMode == 'lateFee' &&
                   _lateFeeOption == 'custom' &&
                   _customLateFeeAmount.trim().isEmpty
@@ -2752,18 +2421,13 @@ class _AppointmentCreateScreenState
               onTap: _showLateFeeIntervalPicker,
               borderRadius: BorderRadius.circular(14),
               child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 14),
                 child: Row(
                   children: [
                     Expanded(
                       child: Text(
                         intervalLabel,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: _gray,
-                        ),
+                        style: const TextStyle(fontSize: 12, color: _gray),
                       ),
                     ),
                     const Icon(
@@ -2777,11 +2441,7 @@ class _AppointmentCreateScreenState
             ),
           ),
 
-          Container(
-            width: 1,
-            height: 24,
-            color: _border,
-          ),
+          Container(width: 1, height: 24, color: _border),
 
           // 오른쪽: 금액
           Expanded(
@@ -2790,39 +2450,28 @@ class _AppointmentCreateScreenState
               onTap: _showCustomLateFeeAmountSheet,
               borderRadius: BorderRadius.circular(14),
               child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 14),
                 child: Row(
                   children: [
                     Expanded(
                       child: Text(
                         _customLateFeeAmount.isEmpty
                             ? '금액 입력'
-                            : _formatLateFeeAmount(
-                                _customLateFeeAmount,
-                              ),
+                            : _formatLateFeeAmount(_customLateFeeAmount),
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontSize: 13,
-                          fontWeight:
-                              _customLateFeeAmount.isEmpty
-                                  ? FontWeight.w500
-                                  : FontWeight.w700,
-                          color:
-                              _customLateFeeAmount.isEmpty
-                                  ? _gray
-                                  : _navy,
+                          fontWeight: _customLateFeeAmount.isEmpty
+                              ? FontWeight.w500
+                              : FontWeight.w700,
+                          color: _customLateFeeAmount.isEmpty ? _gray : _navy,
                         ),
                       ),
                     ),
 
                     const Text(
                       '원',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: _gray,
-                      ),
+                      style: TextStyle(fontSize: 12, color: _gray),
                     ),
                   ],
                 ),
@@ -2842,37 +2491,25 @@ class _AppointmentCreateScreenState
     return Row(
       children: [
         Expanded(
-          child: _penaltyChip(
-            label: '커피 쏘기',
-            value: 'coffee',
-          ),
+          child: _penaltyChip(label: '커피 쏘기', value: 'coffee'),
         ),
 
         const SizedBox(width: 6),
 
         Expanded(
-          child: _penaltyChip(
-            label: '인생네컷',
-            value: 'photo',
-          ),
+          child: _penaltyChip(label: '인생네컷', value: 'photo'),
         ),
 
         const SizedBox(width: 6),
 
         Expanded(
-          child: _penaltyChip(
-            label: '셀카 인증',
-            value: 'selfie',
-          ),
+          child: _penaltyChip(label: '셀카 인증', value: 'selfie'),
         ),
 
         const SizedBox(width: 6),
 
         Expanded(
-          child: _penaltyChip(
-            label: '직접 입력',
-            value: 'custom',
-          ),
+          child: _penaltyChip(label: '직접 입력', value: 'custom'),
         ),
       ],
     );
@@ -2887,20 +2524,20 @@ class _AppointmentCreateScreenState
       child: Container(
         width: double.infinity,
         height: 48,
-        padding: const EdgeInsets.symmetric(
-          horizontal: 14,
-        ),
+        padding: const EdgeInsets.symmetric(horizontal: 14),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color: _showValidationErrors &&
+            color:
+                _showValidationErrors &&
                     _penaltyMode == 'penalty' &&
                     _penaltyOption == 'custom' &&
                     _customPenaltyText.trim().isEmpty
                 ? Colors.red
                 : _border,
-            width: _showValidationErrors &&
+            width:
+                _showValidationErrors &&
                     _penaltyMode == 'penalty' &&
                     _penaltyOption == 'custom' &&
                     _customPenaltyText.trim().isEmpty
@@ -2925,26 +2562,20 @@ class _AppointmentCreateScreenState
 
             const SizedBox(width: 8),
 
-            const Icon(
-              Icons.edit_outlined,
-              size: 18,
-              color: _gray,
-            ),
+            const Icon(Icons.edit_outlined, size: 18, color: _gray),
           ],
         ),
       ),
     );
   }
 
-  Widget _penaltyChip({
-    required String label,
-    required String value,
-  }) {
+  Widget _penaltyChip({required String label, required String value}) {
     final selected = _penaltyOption == value;
 
-    final hasError = _showValidationErrors &&
-      _penaltyMode == 'penalty' &&
-      _penaltyOption.isEmpty;
+    final hasError =
+        _showValidationErrors &&
+        _penaltyMode == 'penalty' &&
+        _penaltyOption.isEmpty;
 
     return InkWell(
       onTap: () async {
@@ -2965,16 +2596,14 @@ class _AppointmentCreateScreenState
       child: Container(
         height: 34,
         decoration: BoxDecoration(
-          color: selected
-              ? _selectedBackground
-              : Colors.white,
+          color: selected ? _selectedBackground : Colors.white,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
             color: hasError
                 ? Colors.red
                 : selected
-                    ? _selectedBackground
-                    : _border,
+                ? _selectedBackground
+                : _border,
             width: hasError ? 1.5 : 1,
           ),
         ),
@@ -2982,9 +2611,7 @@ class _AppointmentCreateScreenState
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
-              selected
-                  ? Icons.radio_button_checked
-                  : Icons.radio_button_off,
+              selected ? Icons.radio_button_checked : Icons.radio_button_off,
               size: 13,
               color: selected ? _blue : _gray,
             ),
@@ -2995,9 +2622,7 @@ class _AppointmentCreateScreenState
               label,
               style: TextStyle(
                 fontSize: 10,
-                fontWeight: selected
-                    ? FontWeight.w700
-                    : FontWeight.w500,
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
                 color: selected ? _blue : _gray,
               ),
             ),
@@ -3019,39 +2644,29 @@ class _AppointmentCreateScreenState
   }) {
     return InkWell(
       onTap: onTap,
-      borderRadius:
-          BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(14),
       child: Container(
         height: 40,
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: selected
-              ? _selectedBackground
-              : Colors.white,
-          borderRadius:
-              BorderRadius.circular(14),
+          color: selected ? _selectedBackground : Colors.white,
+          borderRadius: BorderRadius.circular(14),
           border: Border.all(
             color: hasError
                 ? Colors.red
                 : selected
-                    ? _selectedBackground
-                    : _border,
+                ? _selectedBackground
+                : _border,
             width: hasError ? 1.5 : 1,
           ),
         ),
         child: Row(
-          mainAxisAlignment:
-              MainAxisAlignment.center,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
-              selected
-                  ? Icons
-                      .radio_button_checked
-                  : Icons
-                      .radio_button_off,
+              selected ? Icons.radio_button_checked : Icons.radio_button_off,
               size: 14,
-              color:
-                  selected ? _blue : _gray,
+              color: selected ? _blue : _gray,
             ),
 
             const SizedBox(width: 4),
@@ -3060,12 +2675,8 @@ class _AppointmentCreateScreenState
               label,
               style: TextStyle(
                 fontSize: 12,
-                fontWeight: selected
-                    ? FontWeight.w700
-                    : FontWeight.w500,
-                color: selected
-                    ? _blue
-                    : _gray,
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                color: selected ? _blue : _gray,
               ),
             ),
           ],
@@ -3087,16 +2698,14 @@ class _AppointmentCreateScreenState
         height: 34,
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: selected
-              ? _selectedBackground
-              : Colors.white,
+          color: selected ? _selectedBackground : Colors.white,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
             color: hasError
                 ? Colors.red
                 : selected
-                    ? _selectedBackground
-                    : _border,
+                ? _selectedBackground
+                : _border,
             width: hasError ? 1.5 : 1,
           ),
         ),
@@ -3104,9 +2713,7 @@ class _AppointmentCreateScreenState
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
-              selected
-                  ? Icons.radio_button_checked
-                  : Icons.radio_button_off,
+              selected ? Icons.radio_button_checked : Icons.radio_button_off,
               size: 12,
               color: selected ? _blue : _gray,
             ),
@@ -3117,9 +2724,7 @@ class _AppointmentCreateScreenState
               label,
               style: TextStyle(
                 fontSize: 10,
-                fontWeight: selected
-                    ? FontWeight.w700
-                    : FontWeight.w500,
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
                 color: selected ? _blue : _gray,
               ),
             ),
@@ -3154,41 +2759,29 @@ class _AppointmentCreateScreenState
   }) {
     return InkWell(
       onTap: onTap,
-      borderRadius:
-          BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(14),
       child: Container(
         height: 48,
-        padding:
-            const EdgeInsets.symmetric(
-          horizontal: 14,
-        ),
+        padding: const EdgeInsets.symmetric(horizontal: 14),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius:
-              BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(14),
           border: Border.all(
             color: hasError ? Colors.red : _border,
             width: hasError ? 1.5 : 1,
-                  ),
+          ),
         ),
         child: Row(
           children: [
             if (icon != null) ...[
-              Icon(
-                icon,
-                size: 19,
-                color: _gray,
-              ),
+              Icon(icon, size: 19, color: _gray),
               const SizedBox(width: 9),
             ],
 
             Expanded(
               child: Text(
                 text,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: textColor,
-                ),
+                style: TextStyle(fontSize: 12, color: textColor),
               ),
             ),
 
@@ -3203,29 +2796,14 @@ class _AppointmentCreateScreenState
     return InputDecoration(
       filled: true,
       fillColor: Colors.white,
-      contentPadding:
-          const EdgeInsets.symmetric(
-        horizontal: 14,
-        vertical: 14,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: _border),
       ),
-      enabledBorder:
-          OutlineInputBorder(
-        borderRadius:
-            BorderRadius.circular(14),
-        borderSide:
-            const BorderSide(
-          color: _border,
-        ),
-      ),
-      focusedBorder:
-          OutlineInputBorder(
-        borderRadius:
-            BorderRadius.circular(14),
-        borderSide:
-            const BorderSide(
-          color: _blue,
-          width: 1.2,
-        ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: _blue, width: 1.2),
       ),
     );
   }
@@ -3235,8 +2813,7 @@ class _AppointmentCreateScreenState
 // 달력 요일
 // ===============================================================
 
-class _CalendarWeekday
-    extends StatelessWidget {
+class _CalendarWeekday extends StatelessWidget {
   final String text;
 
   const _CalendarWeekday(this.text);
@@ -3247,10 +2824,7 @@ class _CalendarWeekday
       child: Center(
         child: Text(
           text,
-          style: const TextStyle(
-            fontSize: 10,
-            color: Color(0xFF7D919F),
-          ),
+          style: const TextStyle(fontSize: 10, color: Color(0xFF7D919F)),
         ),
       ),
     );
@@ -3265,8 +2839,5 @@ class _WheelTimeResult {
   final int hour;
   final int minute;
 
-  const _WheelTimeResult({
-    required this.hour,
-    required this.minute,
-  });
+  const _WheelTimeResult({required this.hour, required this.minute});
 }

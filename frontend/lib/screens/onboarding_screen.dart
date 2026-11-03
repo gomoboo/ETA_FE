@@ -1,3 +1,5 @@
+import '../services/eta_api_service.dart';
+
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -5,18 +7,12 @@ import 'package:permission_handler/permission_handler.dart';
 class OnboardingScreen extends StatelessWidget {
   const OnboardingScreen({super.key});
 
-  Widget _building({
-    required double width,
-    required double height,
-  }) {
+  Widget _building({required double width, required double height}) {
     return Container(
       width: width,
       height: height,
       decoration: BoxDecoration(
-        border: Border.all(
-          color: const Color(0xFFD5EAF3),
-          width: 1.5,
-        ),
+        border: Border.all(color: const Color(0xFFD5EAF3), width: 1.5),
         borderRadius: BorderRadius.circular(16),
       ),
     );
@@ -75,11 +71,7 @@ class OnboardingScreen extends StatelessWidget {
                     ),
 
                     // 세로 도로
-                    Container(
-                      width: 22,
-                      height: 246,
-                      color: Colors.white,
-                    ),
+                    Container(width: 22, height: 246, color: Colors.white),
 
                     // 가로 도로
                     Container(
@@ -177,10 +169,7 @@ class OnboardingScreen extends StatelessWidget {
                     SizedBox(height: 8),
                     Text(
                       '끝나면 위치 공유도 자동으로 종료돼요.',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Color(0xFF8299AA),
-                      ),
+                      style: TextStyle(fontSize: 14, color: Color(0xFF8299AA)),
                     ),
                   ],
                 ),
@@ -231,10 +220,7 @@ class OnboardingScreen extends StatelessWidget {
                   ),
                   child: const Text(
                     '다음',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                    ),
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
                   ),
                 ),
               ),
@@ -245,10 +231,7 @@ class OnboardingScreen extends StatelessWidget {
               const Center(
                 child: Text(
                   '위치 권한은 필요한 순간에 요청해요.',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Color(0xFF8299AA),
-                  ),
+                  style: TextStyle(fontSize: 13, color: Color(0xFF8299AA)),
                 ),
               ),
             ],
@@ -480,15 +463,21 @@ class _SecondOnboardingScreenState extends State<SecondOnboardingScreen> {
                         ),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(16),
-                          borderSide: const BorderSide(color: Color(0xFFD5EAF3)),
+                          borderSide: const BorderSide(
+                            color: Color(0xFFD5EAF3),
+                          ),
                         ),
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(16),
-                          borderSide: const BorderSide(color: Color(0xFFD5EAF3)),
+                          borderSide: const BorderSide(
+                            color: Color(0xFFD5EAF3),
+                          ),
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(16),
-                          borderSide: const BorderSide(color: Color(0xFF1685B5)),
+                          borderSide: const BorderSide(
+                            color: Color(0xFF1685B5),
+                          ),
                         ),
                       ),
                     ),
@@ -554,47 +543,64 @@ class _SmallPageDot extends StatelessWidget {
 }
 
 class ThirdOnboardingScreen extends StatefulWidget {
-  const ThirdOnboardingScreen({
-    super.key,
-    required this.nickname,
-  });
+  const ThirdOnboardingScreen({super.key, required this.nickname});
 
   final String nickname;
 
   @override
-  State<ThirdOnboardingScreen> createState() =>
-      _ThirdOnboardingScreenState();
+  State<ThirdOnboardingScreen> createState() => _ThirdOnboardingScreenState();
 }
 
 class _ThirdOnboardingScreenState extends State<ThirdOnboardingScreen> {
   bool _locationAgreementChecked = false;
+  bool _isRegistering = false;
 
-  void _goHome() {
-    Navigator.of(context).pushNamedAndRemoveUntil(
-      '/',
-      (route) => false,
-      arguments: widget.nickname,
-    );
+  Future<void> _goHome() async {
+    if (_isRegistering) return;
+
+    setState(() {
+      _isRegistering = true;
+    });
+
+    try {
+      await EtaApiService.registerUser(
+        nickname: widget.nickname,
+        locationTermsAgreed: _locationAgreementChecked,
+        notificationAllowed: false,
+      );
+
+      if (!mounted) return;
+
+      Navigator.of(context).pushNamedAndRemoveUntil(
+        '/',
+        (route) => false,
+        arguments: widget.nickname,
+      );
+    } catch (error) {
+      if (!mounted) return;
+
+      setState(() {
+        _isRegistering = false;
+      });
+
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('사용자 등록 실패: $error')));
+    }
   }
 
   Future<void> _requestLocationPermission() async {
     try {
-      final serviceEnabled =
-          await Geolocator.isLocationServiceEnabled();
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
 
       if (!mounted) return;
 
       if (!serviceEnabled) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('휴대폰의 위치 서비스를 켜주세요.'),
-          ),
-        );
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('휴대폰의 위치 서비스를 켜주세요.')));
         return;
       }
 
-      LocationPermission permission =
-          await Geolocator.checkPermission();
+      LocationPermission permission = await Geolocator.checkPermission();
 
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
@@ -603,11 +609,8 @@ class _ThirdOnboardingScreenState extends State<ThirdOnboardingScreen> {
       if (!mounted) return;
 
       if (permission == LocationPermission.denied) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('위치 권한이 허용되지 않았어요.'),
-          ),
-        );
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('위치 권한이 허용되지 않았어요.')));
         return;
       }
 
@@ -628,11 +631,8 @@ class _ThirdOnboardingScreenState extends State<ThirdOnboardingScreen> {
     } catch (_) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('위치 권한 확인 중 문제가 발생했어요.'),
-        ),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('위치 권한 확인 중 문제가 발생했어요.')));
     }
   }
 
@@ -730,10 +730,7 @@ class _ThirdOnboardingScreenState extends State<ThirdOnboardingScreen> {
                   },
                   child: const Text(
                     '나중에',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Color(0xFF8299AA),
-                    ),
+                    style: TextStyle(fontSize: 14, color: Color(0xFF8299AA)),
                   ),
                 ),
               ],
@@ -756,9 +753,7 @@ class _ThirdOnboardingScreenState extends State<ThirdOnboardingScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: const Color(0xFFDDEBF2),
-        ),
+        border: Border.all(color: const Color(0xFFDDEBF2)),
       ),
       child: Row(
         children: [
@@ -769,11 +764,7 @@ class _ThirdOnboardingScreenState extends State<ThirdOnboardingScreen> {
               color: Color(0xFFEAF7FC),
               shape: BoxShape.circle,
             ),
-            child: Icon(
-              icon,
-              size: 19,
-              color: const Color(0xFF1685B5),
-            ),
+            child: Icon(icon, size: 19, color: const Color(0xFF1685B5)),
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -928,8 +919,7 @@ class _ThirdOnboardingScreenState extends State<ThirdOnboardingScreen> {
                   borderRadius: BorderRadius.circular(16),
                   onTap: () {
                     setState(() {
-                      _locationAgreementChecked =
-                          !_locationAgreementChecked;
+                      _locationAgreementChecked = !_locationAgreementChecked;
                     });
                   },
                   child: Container(
@@ -939,9 +929,7 @@ class _ThirdOnboardingScreenState extends State<ThirdOnboardingScreen> {
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: const Color(0xFFDDEBF2),
-                      ),
+                      border: Border.all(color: const Color(0xFFDDEBF2)),
                     ),
                     child: Row(
                       children: [
@@ -989,8 +977,7 @@ class _ThirdOnboardingScreenState extends State<ThirdOnboardingScreen> {
                   width: double.infinity,
                   height: 52,
                   child: ElevatedButton(
-                    onPressed:
-                        canStart ? _requestLocationPermission : null,
+                    onPressed: canStart ? _requestLocationPermission : null,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF7DD4F7),
                       disabledBackgroundColor: const Color(0xFFDDEBF2),
@@ -1021,10 +1008,7 @@ class _ThirdOnboardingScreenState extends State<ThirdOnboardingScreen> {
                     onPressed: _showNotificationDialog,
                     child: const Text(
                       '나중에 할게요',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Color(0xFF8299AA),
-                      ),
+                      style: TextStyle(fontSize: 14, color: Color(0xFF8299AA)),
                     ),
                   ),
                 ),
