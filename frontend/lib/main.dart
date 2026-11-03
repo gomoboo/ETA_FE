@@ -4,6 +4,7 @@ import 'package:kakao_map_sdk/kakao_map_sdk.dart';
 import 'screens/home_screen.dart';
 import 'screens/appointment_create_screen.dart';
 import 'screens/appointment_waiting_screen.dart';
+import 'screens/appointment_join_screen.dart';
 import 'screens/live_map_screen.dart';
 import 'screens/onboarding_screen.dart';
 
@@ -34,6 +35,7 @@ class MyApp extends StatelessWidget {
         '/': (context) => const HomeScreen(),
         '/appointment-create': (context) => const AppointmentCreateScreen(),
         '/appointment-waiting': (context) => const AppointmentWaitingScreen(),
+        '/appointment-join': (context) => const AppointmentJoinScreen(),
         '/live-map': (context) => const LiveMapScreen(),
       },
     );
