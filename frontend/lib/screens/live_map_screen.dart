@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:kakao_map_sdk/kakao_map_sdk.dart';
@@ -250,7 +251,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
           }
         },
         onMessage: (message) {
-          debugPrint('ETA WebSocket 수신: $message');
+          unawaited(_handleRealtimeMessage(message, participantId));
         },
         onError: (error) {
           debugPrint('ETA WebSocket 오류: $error');
@@ -265,6 +266,74 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text('실시간 연결 실패: $error')));
       }
+    }
+  }
+
+  Future<void> _handleRealtimeMessage(
+    String message,
+    int myParticipantId,
+  ) async {
+    try {
+      final decoded = jsonDecode(message);
+      if (decoded is! Map<String, dynamic>) return;
+
+      if (decoded['type'] != 'map:sync') {
+        debugPrint('ETA WebSocket 수신 이벤트: ${decoded['type']}');
+        return;
+      }
+
+      final participants = decoded['participants'];
+      if (participants is! List) return;
+
+      debugPrint('ETA WebSocket: map:sync ${participants.length}명 수신');
+
+      for (final item in participants) {
+        if (item is! Map) continue;
+
+        final id = item['participantId'];
+        final name = item['nickname'];
+        final latitude = item['latitude'];
+        final longitude = item['longitude'];
+
+        if (id is! int || id == myParticipantId) continue;
+        if (name is! String || name.trim().isEmpty) continue;
+        if (latitude is! num || longitude is! num) continue;
+
+        final distance = item['distanceMeter'];
+        final speed = item['speedKmh'];
+        final eta = item['estimatedArrivalMinutes'];
+        final movement = item['movementState'];
+
+        final distanceText = distance is num
+            ? (distance >= 1000
+                  ? '${(distance / 1000).toStringAsFixed(1)}km'
+                  : '${distance.round()}m')
+            : '거리 확인 중';
+
+        String status = eta is num ? '${eta.round()}분 후' : '위치 확인 중';
+
+        if (movement == 'ARRIVED') {
+          status = '도착 완료';
+        } else if (movement == 'SUSPECTED_NOT_DEPARTED') {
+          status = '미출발 의심';
+        } else if (movement == 'LATE') {
+          status = '지각 중';
+        }
+
+        if (!mounted) return;
+
+        await _updateFriendData(
+          id: 'participant-$id',
+          name: name,
+          position: LatLng(latitude.toDouble(), longitude.toDouble()),
+          distanceText: distanceText,
+          speedKmh: speed is num ? speed.toDouble() : 0,
+          status: status,
+          warning: movement == 'SUSPECTED_NOT_DEPARTED',
+        );
+      }
+    } catch (error) {
+      debugPrint('ETA WebSocket 메시지 처리 실패: $error');
     }
   }
 
@@ -303,14 +372,16 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
   // ===============================================================
 
   void _sendLocationToServer(LocationSample sample) {
-    // TODO: 백엔드 연결 후 location:update 전송
-    //
-    // socket.emit('location:update', {
-    //   'roomId': roomId,
-    //   'latitude': sample.latitude,
-    //   'longitude': sample.longitude,
-    //   'speedKmh': sample.speedKmh,
-    // });
+    if (!_socketService.isConnected) return;
+
+    _socketService.send({
+      'type': 'location:update',
+      'latitude': sample.latitude,
+      'longitude': sample.longitude,
+      'speedKmh': sample.speedKmh < 0 ? 0.0 : sample.speedKmh,
+    });
+
+    debugPrint('ETA WebSocket: GPS 위치 전송');
   }
 
   // ===============================================================
@@ -381,6 +452,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
 
   Future<void> _updateFriendData({
     required String id,
+    String? name,
     LatLng? position,
     String? distanceText,
     double? speedKmh,
@@ -390,6 +462,45 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
     final index = _friends.indexWhere((friend) => friend.id == id);
 
     if (index == -1) {
+      if (!mounted || position == null || name == null || name.trim().isEmpty) {
+        return;
+      }
+
+      final nickname = name.trim();
+      final friend = FriendRadarData(
+        id: id,
+        name: nickname,
+        initial: nickname.substring(0, 1),
+        position: position,
+        distanceText: distanceText ?? '거리 확인 중',
+        speedKmh: speedKmh ?? 0,
+        status: status ?? '위치 확인 중',
+        warning: warning ?? false,
+      );
+
+      setState(() {
+        _friends.add(friend);
+      });
+
+      final controller = _mapController;
+      if (controller != null && !_friendPois.containsKey(id)) {
+        final icon = await _buildCircleMarkerIcon(
+          initial: friend.initial,
+          backgroundColor: _friendMarkerBackground,
+          textColor: _blue,
+        );
+
+        if (!mounted || _friendPois.containsKey(id)) return;
+
+        final poi = await controller.labelLayer.addPoi(
+          position,
+          id: id,
+          style: PoiStyle(icon: icon),
+        );
+
+        _friendPois[id] = poi;
+      }
+
       return;
     }
 
