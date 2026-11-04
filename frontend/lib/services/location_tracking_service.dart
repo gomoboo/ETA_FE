@@ -42,30 +42,22 @@ class LocationTrackingService {
     final canUseLocation = await _prepareLocationPermission();
 
     if (!canUseLocation) {
-      onError?.call(
-        Exception('위치 권한을 사용할 수 없습니다.'),
-      );
+      onError?.call(Exception('위치 권한을 사용할 수 없습니다.'));
       return;
     }
 
     _isRunning = true;
 
     // 시작하자마자 한 번 수집
-    await _collectLocation(
-      onLocation: onLocation,
-      onError: onError,
-    );
+    await _collectLocation(onLocation: onLocation, onError: onError);
+
+    // 첫 GPS 요청 중 stop()이 호출됐다면 타이머를 시작하지 않음
+    if (!_isRunning) return;
 
     // 이후 10초마다 수집
-    _timer = Timer.periodic(
-      const Duration(seconds: 10),
-      (_) {
-        _collectLocation(
-          onLocation: onLocation,
-          onError: onError,
-        );
-      },
-    );
+    _timer = Timer.periodic(const Duration(seconds: 10), (_) {
+      _collectLocation(onLocation: onLocation, onError: onError);
+    });
   }
 
   /// GPS 수집 중지
@@ -80,46 +72,36 @@ class LocationTrackingService {
   Future<bool> _prepareLocationPermission() async {
     debugPrint('📍 [GPS] 위치 서비스 확인 시작');
 
-    final serviceEnabled =
-        await Geolocator.isLocationServiceEnabled();
+    final serviceEnabled = await Geolocator.isLocationServiceEnabled();
 
-    debugPrint(
-        '📍 [GPS] 위치 서비스 활성화: $serviceEnabled',
-    );
+    debugPrint('📍 [GPS] 위치 서비스 활성화: $serviceEnabled');
 
     if (!serviceEnabled) {
-        return false;
+      return false;
     }
 
-    LocationPermission permission =
-        await Geolocator.checkPermission();
+    LocationPermission permission = await Geolocator.checkPermission();
 
-    debugPrint(
-        '📍 [GPS] 현재 권한 상태: $permission',
-    );
+    debugPrint('📍 [GPS] 현재 권한 상태: $permission');
 
     if (permission == LocationPermission.denied) {
-        debugPrint('📍 [GPS] 위치 권한 요청');
+      debugPrint('📍 [GPS] 위치 권한 요청');
 
-        permission =
-            await Geolocator.requestPermission();
+      permission = await Geolocator.requestPermission();
 
-        debugPrint(
-        '📍 [GPS] 요청 후 권한 상태: $permission',
-        );
+      debugPrint('📍 [GPS] 요청 후 권한 상태: $permission');
     }
 
     if (permission == LocationPermission.denied ||
         permission == LocationPermission.deniedForever) {
-        return false;
+      return false;
     }
 
     return true;
-    }
+  }
 
   Future<void> _collectLocation({
-    required void Function(LocationSample sample)
-        onLocation,
+    required void Function(LocationSample sample) onLocation,
     void Function(Object error)? onError,
   }) async {
     // 앞선 GPS 요청이 아직 끝나지 않았다면
@@ -131,37 +113,33 @@ class LocationTrackingService {
     _isCollecting = true;
 
     try {
-        debugPrint('📍 [GPS] 현재 위치 요청 시작');
-        final position =
-            await Geolocator.getCurrentPosition(
-                locationSettings: const LocationSettings(
-                    accuracy: LocationAccuracy.high,
-                    timeLimit: Duration(seconds: 10),
-                ),
-            );
+      debugPrint('📍 [GPS] 현재 위치 요청 시작');
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 10),
+        ),
+      );
 
-        debugPrint('📍 [GPS] 현재 위치 수신 성공');
+      debugPrint('📍 [GPS] 현재 위치 수신 성공');
 
-        final speedKmh =
-            position.speed < 0
-                ? 0.0
-                : position.speed * 3.6;
+      final speedKmh = position.speed < 0 ? 0.0 : position.speed * 3.6;
 
-        final sample = LocationSample(
-            latitude: position.latitude,
-            longitude: position.longitude,
-            speedKmh: speedKmh,
-            accuracy: position.accuracy,
-            collectedAt: DateTime.now(),
-        );
+      final sample = LocationSample(
+        latitude: position.latitude,
+        longitude: position.longitude,
+        speedKmh: speedKmh,
+        accuracy: position.accuracy,
+        collectedAt: DateTime.now(),
+      );
 
-        onLocation(sample);
-        } catch (e) {
-        onError?.call(e);
-        } finally {
-        _isCollecting = false;
-        }
+      onLocation(sample);
+    } catch (e) {
+      onError?.call(e);
+    } finally {
+      _isCollecting = false;
     }
+  }
 
   void dispose() {
     stop();

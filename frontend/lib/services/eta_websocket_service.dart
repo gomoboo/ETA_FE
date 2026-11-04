@@ -6,6 +6,8 @@ class EtaWebSocketService {
   WebSocket? _socket;
   StreamSubscription<dynamic>? _subscription;
   bool _disposed = false;
+  bool _connecting = false;
+  Timer? _retryTimer;
 
   bool get isConnected => _socket?.readyState == WebSocket.open;
 
@@ -22,6 +24,32 @@ class EtaWebSocketService {
       throw StateError('이미 종료된 WebSocket 서비스입니다.');
     }
 
+    if (_connecting || isConnected) return;
+
+    _connecting = true;
+    _retryTimer?.cancel();
+    _retryTimer = null;
+
+    void scheduleRetry() {
+      if (_disposed || _retryTimer != null) return;
+
+      _retryTimer = Timer(const Duration(seconds: 2), () {
+        _retryTimer = null;
+
+        unawaited(
+          connect(
+            appointmentId: appointmentId,
+            participantId: participantId,
+            guestUuid: guestUuid,
+            onConnected: onConnected,
+            onMessage: onMessage,
+            onError: onError,
+            onDisconnected: onDisconnected,
+          ),
+        );
+      });
+    }
+
     final uri = Uri(
       scheme: 'ws',
       host: '15.165.148.253',
@@ -33,30 +61,58 @@ class EtaWebSocketService {
       },
     );
 
-    final socket = await WebSocket.connect(uri.toString())
-        .timeout(const Duration(seconds: 10));
+    try {
+      final socket = await WebSocket.connect(uri.toString())
+          .timeout(const Duration(seconds: 10));
 
-    if (_disposed) {
-      await socket.close();
-      return;
-    }
+      if (_disposed) {
+        await socket.close();
+        return;
+      }
 
-    _socket = socket;
+      _socket = socket;
 
-    _subscription = socket.listen(
-      (message) {
-        if (message is String) {
-          onMessage(message);
-        }
-      },
-      onError: (Object error) {
+      _subscription = socket.listen(
+        (message) {
+          if (message is String) {
+            onMessage(message);
+          }
+        },
+        onError: (Object error) {
+          onError(error);
+
+          if (!identical(_socket, socket)) return;
+
+          _socket = null;
+          unawaited(socket.close());
+          scheduleRetry();
+        },
+        onDone: () {
+          if (!identical(_socket, socket)) return;
+
+          _socket = null;
+          onDisconnected();
+
+          // 서버가 접근 권한 없음/종료된 약속으로 연결을 거부한 경우
+          // 무한 재연결하지 않음
+          if (socket.closeCode == WebSocketStatus.policyViolation) {
+            return;
+          }
+
+          scheduleRetry();
+        },
+        cancelOnError: false,
+      );
+
+      onConnected();
+    } catch (error) {
+      if (!_disposed) {
         onError(error);
-      },
-      onDone: onDisconnected,
-      cancelOnError: false,
-    );
-
-    onConnected();
+        scheduleRetry();
+      }
+    } finally {
+      _connecting = false;
+    }
   }
 
   void send(Map<String, dynamic> payload) {
@@ -71,6 +127,9 @@ class EtaWebSocketService {
 
   Future<void> dispose() async {
     _disposed = true;
+
+    _retryTimer?.cancel();
+    _retryTimer = null;
 
     final subscription = _subscription;
     _subscription = null;

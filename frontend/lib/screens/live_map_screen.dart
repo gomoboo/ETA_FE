@@ -2,11 +2,14 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:kakao_map_sdk/kakao_map_sdk.dart';
 
 import '../services/location_tracking_service.dart';
 import '../services/eta_websocket_service.dart';
 import '../services/guest_identity_service.dart';
+import '../services/eta_api_service.dart';
+import 'arrival_checkin_screen.dart';
 
 class FriendRadarData {
   const FriendRadarData({
@@ -105,6 +108,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
 
   final EtaWebSocketService _socketService = EtaWebSocketService();
   bool _socketStarted = false;
+  bool _myArrivalConfirmed = false;
 
   // ===============================================================
   // Kakao Map
@@ -233,6 +237,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
   Future<void> _connectRealtime(int appointmentId, int participantId) async {
     if (_socketStarted) return;
     _socketStarted = true;
+    unawaited(_loadAppointmentDetail(appointmentId));
 
     try {
       final guestUuid = await GuestIdentityService.getOrCreateUuid();
@@ -245,19 +250,30 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
         guestUuid: guestUuid,
         onConnected: () {
           debugPrint('ETA WebSocket: 레이더 연결 성공');
+          if (mounted && _checkingScreenOpen && !_myArrivalConfirmed) {
+            _checkingStatus.value = ArrivalCheckinStatus.checking;
+          }
           if (mounted) {
             ScaffoldMessenger.of(context)
                 .showSnackBar(const SnackBar(content: Text('실시간 서버 연결 성공')));
           }
         },
         onMessage: (message) {
-          unawaited(_handleRealtimeMessage(message, participantId));
+          unawaited(
+            _handleRealtimeMessage(message, participantId, appointmentId),
+          );
         },
         onError: (error) {
           debugPrint('ETA WebSocket 오류: $error');
+          if (mounted && _checkingScreenOpen && !_myArrivalConfirmed) {
+            _checkingStatus.value = ArrivalCheckinStatus.disconnected;
+          }
         },
         onDisconnected: () {
           debugPrint('ETA WebSocket 연결 종료');
+          if (mounted && _checkingScreenOpen && !_myArrivalConfirmed) {
+            _checkingStatus.value = ArrivalCheckinStatus.disconnected;
+          }
         },
       );
     } catch (error) {
@@ -272,10 +288,25 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
   Future<void> _handleRealtimeMessage(
     String message,
     int myParticipantId,
+    int appointmentId,
   ) async {
     try {
       final decoded = jsonDecode(message);
       if (decoded is! Map<String, dynamic>) return;
+
+      if (decoded['type'] == 'checkin:completed') {
+        final arrivedId = decoded['participantId'];
+        if (arrivedId is! int) return;
+
+        if (arrivedId == myParticipantId) {
+          _myArrivalConfirmed = true;
+          _locationTrackingService.stop();
+          debugPrint('ETA 체크인: 본인 도착 확정, GPS 수집 중단');
+        }
+
+        await _openArrivalResult(decoded, appointmentId);
+        return;
+      }
 
       if (decoded['type'] != 'map:sync') {
         debugPrint('ETA WebSocket 수신 이벤트: ${decoded['type']}');
@@ -337,10 +368,197 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
     }
   }
 
+  // 서버 체크인 결과를 최신 피그마 도착 화면에 연결
+  final Set<String> _shownArrivalEvents = {};
+  Map<String, dynamic>? _cachedAppointmentDetail;
+
+  Future<void> _loadAppointmentDetail(int appointmentId) async {
+    try {
+      final detail = await EtaApiService.getAppointmentDetail(appointmentId);
+
+      if (!mounted) return;
+
+      _cachedAppointmentDetail = detail;
+      debugPrint('ETA 체크인: 약속 상세 정보 미리 저장 완료');
+
+      final sample = _latestLocation;
+      if (sample != null) _maybeShowArrivalChecking(sample);
+    } catch (error) {
+      debugPrint('ETA 체크인: 약속 상세 정보 사전 조회 실패: $error');
+    }
+  }
+
+  Future<void> _openArrivalResult(
+    Map<String, dynamic> event,
+    int appointmentId,
+  ) async {
+    final rawStatus = event['arrivalStatus']?.toString();
+
+    final ArrivalCheckinStatus? status = switch (rawStatus) {
+      'EARLY' => ArrivalCheckinStatus.early,
+      'ON_TIME' => ArrivalCheckinStatus.onTime,
+      'LATE' => ArrivalCheckinStatus.late,
+      _ => null,
+    };
+
+    final arrivedAt = DateTime.tryParse(event['arrivedAt']?.toString() ?? '');
+
+    if (status == null || arrivedAt == null) {
+      debugPrint('ETA 체크인: 도착 상태 또는 시간이 없어 화면 표시 생략');
+      return;
+    }
+
+    final eventKey = '${event["participantId"]}:${event["arrivedAt"]}';
+
+    if (!_shownArrivalEvents.add(eventKey)) return;
+
+    try {
+      final detail =
+          _cachedAppointmentDetail ??
+          await EtaApiService.getAppointmentDetail(appointmentId);
+
+      if (!mounted) return;
+
+      _cachedAppointmentDetail = detail;
+
+      final meetAt = DateTime.tryParse(detail['meetAt']?.toString() ?? '');
+
+      final place = detail['targetPlace'];
+      final placeName = place is Map ? place['name']?.toString() : null;
+
+      if (meetAt == null || placeName == null || placeName.trim().isEmpty) {
+        debugPrint('ETA 체크인: 약속 시간 또는 장소 확인 실패');
+        _shownArrivalEvents.remove(eventKey);
+        return;
+      }
+
+      final nickname = event['nickname']?.toString() ?? '참가자';
+
+      final lateMinutes = event['finalLateMinutes'];
+
+      if (!mounted) return;
+
+      // 본인 도착이 확정되면 S-51을 먼저 제거한다.
+      final checkingRoute = _checkingRoute;
+
+      if (_myArrivalConfirmed &&
+          checkingRoute != null &&
+          checkingRoute.isActive) {
+        Navigator.of(context).removeRoute(checkingRoute);
+        _checkingRoute = null;
+        _checkingScreenOpen = false;
+      }
+
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute(
+          builder: (_) => ArrivalCheckinScreen(
+            status: status,
+            nickname: nickname,
+            placeName: placeName,
+            meetAt: meetAt,
+            arrivedAt: arrivedAt,
+            finalLateMinutes: lateMinutes is num ? lateMinutes.toInt() : null,
+            allArrived: event['allArrived'] == true,
+          ),
+        ),
+      );
+    } catch (error) {
+      _shownArrivalEvents.remove(eventKey);
+      debugPrint('ETA 체크인 화면 연결 실패: $error');
+    }
+  }
+
+  // S-51 표시 판단용 거리 계산
+  // 실제 도착 확정은 반드시 서버에서 처리한다.
+  double? _distanceToMeetingPlace(LocationSample sample) {
+    final place = _cachedAppointmentDetail?['targetPlace'];
+    if (place is! Map) return null;
+
+    final latitude = place['latitude'];
+    final longitude = place['longitude'];
+
+    if (latitude is! num || longitude is! num) return null;
+
+    return Geolocator.distanceBetween(
+      sample.latitude,
+      sample.longitude,
+      latitude.toDouble(),
+      longitude.toDouble(),
+    );
+  }
+
+  // S-51: 도착 확인 중 화면 표시
+  bool _checkingScreenOpen = false;
+  MaterialPageRoute<void>? _checkingRoute;
+  final ValueNotifier<ArrivalCheckinStatus> _checkingStatus = ValueNotifier(
+    ArrivalCheckinStatus.checking,
+  );
+
+  void _maybeShowArrivalChecking(LocationSample sample) {
+    if (!mounted || _myArrivalConfirmed || _checkingScreenOpen) return;
+    if (!_socketService.isConnected) return;
+
+    final distance = _distanceToMeetingPlace(sample);
+    if (distance == null || distance > 30) return;
+
+    final detail = _cachedAppointmentDetail;
+    if (detail == null) return;
+
+    final meetAt = DateTime.tryParse(detail['meetAt']?.toString() ?? '');
+    final place = detail['targetPlace'];
+    final placeName = place is Map ? place['name']?.toString() : null;
+
+    if (meetAt == null || placeName == null) return;
+
+    _checkingScreenOpen = true;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _myArrivalConfirmed) {
+        _checkingScreenOpen = false;
+        return;
+      }
+
+      _checkingStatus.value = ArrivalCheckinStatus.checking;
+
+      final route = MaterialPageRoute<void>(
+        builder: (_) => ValueListenableBuilder<ArrivalCheckinStatus>(
+          valueListenable: _checkingStatus,
+          builder: (context, currentStatus, _) => ArrivalCheckinScreen(
+            status: currentStatus,
+            nickname: _myNickname,
+            placeName: placeName,
+            meetAt: meetAt,
+          ),
+        ),
+      );
+
+      _checkingRoute = route;
+
+      unawaited(
+        Navigator.of(context).push<void>(route).then((_) {
+          if (identical(_checkingRoute, route)) {
+            _checkingRoute = null;
+          }
+          _checkingScreenOpen = false;
+        }),
+      );
+    });
+  }
+
   Future<void> _startLocationTracking() async {
     await _locationTrackingService.start(
       onLocation: (sample) {
-        if (!mounted) return;
+        if (!mounted || _myArrivalConfirmed) return;
+
+        _maybeShowArrivalChecking(sample);
+
+        final distance = _distanceToMeetingPlace(sample);
+        if (distance != null) {
+          debugPrint(
+            'ETA 체크인: 약속 장소까지 거리 '
+            '${distance.toStringAsFixed(1)}m',
+          );
+        }
 
         setState(() {
           _latestLocation = sample;
@@ -372,7 +590,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
   // ===============================================================
 
   void _sendLocationToServer(LocationSample sample) {
-    if (!_socketService.isConnected) return;
+    if (_myArrivalConfirmed || !_socketService.isConnected) return;
 
     _socketService.send({
       'type': 'location:update',
@@ -621,6 +839,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
   void dispose() {
     _locationTrackingService.dispose();
     unawaited(_socketService.dispose());
+    _checkingStatus.dispose();
 
     super.dispose();
   }
