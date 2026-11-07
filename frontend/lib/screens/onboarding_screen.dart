@@ -300,10 +300,11 @@ class _SecondOnboardingScreenState extends State<SecondOnboardingScreen> {
     );
   }
 
-  Widget _radar() {
+  Widget _radar({double height = 246}) {
+    final scale = height / 246;
     return Container(
       width: double.infinity,
-      height: 246,
+      height: height,
       decoration: BoxDecoration(
         color: const Color(0xFFEAF7FC),
         borderRadius: BorderRadius.circular(26),
@@ -311,26 +312,30 @@ class _SecondOnboardingScreenState extends State<SecondOnboardingScreen> {
       child: Stack(
         alignment: Alignment.center,
         children: [
-          _ring(210),
-          _ring(142),
-          _ring(76),
+          _ring(210 * scale),
+          _ring(142 * scale),
+          _ring(76 * scale),
           Container(
-            width: 66,
-            height: 66,
+            width: 66 * scale,
+            height: 66 * scale,
             alignment: Alignment.center,
             decoration: const BoxDecoration(
               color: Color(0xFF7DD4F7),
               shape: BoxShape.circle,
             ),
-            child: const Icon(
+            child: Icon(
               Icons.location_on_outlined,
-              size: 30,
+              size: 30 * scale,
               color: Color(0xFF1685B5),
             ),
           ),
-          Positioned(left: 62, top: 64, child: _avatar('나')),
-          Positioned(right: 49, top: 55, child: _avatar('윤')),
-          Positioned(right: 66, bottom: 48, child: _avatar('민')),
+          Positioned(left: 62 * scale, top: 64 * scale, child: _avatar('나')),
+          Positioned(right: 49 * scale, top: 55 * scale, child: _avatar('윤')),
+          Positioned(
+            right: 66 * scale,
+            bottom: 48 * scale,
+            child: _avatar('민'),
+          ),
         ],
       ),
     );
@@ -342,14 +347,30 @@ class _SecondOnboardingScreenState extends State<SecondOnboardingScreen> {
       backgroundColor: const Color(0xFFF7FBFE),
       body: SafeArea(
         child: LayoutBuilder(
-          builder: (context, _) {
+          builder: (context, constraints) {
+            final availableHeight = constraints.maxHeight;
+            final compact = availableHeight < 850;
+            final veryCompact = availableHeight < 700;
+            final radarHeight = veryCompact
+                ? 210.0
+                : compact
+                ? 245.0
+                : 258.0;
             return SingleChildScrollView(
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+              padding: const EdgeInsets.only(bottom: 24),
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 24),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const SizedBox(height: 20),
+                    SizedBox(
+                      height: veryCompact
+                          ? 8
+                          : compact
+                          ? 18
+                          : 20,
+                    ),
                     const Text(
                       '이따',
                       style: TextStyle(
@@ -358,9 +379,21 @@ class _SecondOnboardingScreenState extends State<SecondOnboardingScreen> {
                         color: Color(0xFF17354A),
                       ),
                     ),
-                    const SizedBox(height: 35),
-                    _radar(),
-                    const SizedBox(height: 32),
+                    SizedBox(
+                      height: veryCompact
+                          ? 12
+                          : compact
+                          ? 29
+                          : 35,
+                    ),
+                    _radar(height: radarHeight),
+                    SizedBox(
+                      height: veryCompact
+                          ? 16
+                          : compact
+                          ? 27
+                          : 32,
+                    ),
                     const Text(
                       '친구들이 오는 길을\n한 눈에 확인해요.',
                       style: TextStyle(
@@ -441,6 +474,7 @@ class _SecondOnboardingScreenState extends State<SecondOnboardingScreen> {
                     ),
                     const SizedBox(height: 8),
                     TextField(
+                      scrollPadding: const EdgeInsets.only(bottom: 100),
                       maxLength: 10,
                       onChanged: (value) {
                         _nickname = value;
@@ -499,7 +533,7 @@ class _SecondOnboardingScreenState extends State<SecondOnboardingScreen> {
                         child: const Text(
                           '다음',
                           style: TextStyle(
-                            fontSize: 15,
+                            fontSize: 16,
                             fontWeight: FontWeight.w700,
                           ),
                         ),
@@ -510,7 +544,7 @@ class _SecondOnboardingScreenState extends State<SecondOnboardingScreen> {
                       child: Text(
                         '위치 권한은 필요한 순간에 요청해요.',
                         style: TextStyle(
-                          fontSize: 12,
+                          fontSize: 13,
                           color: Color(0xFF8299AA),
                         ),
                       ),
