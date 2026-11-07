@@ -1,4 +1,5 @@
 import '../services/eta_api_service.dart';
+import '../services/location_tracking_service.dart';
 
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
@@ -567,6 +568,10 @@ class _ThirdOnboardingScreenState extends State<ThirdOnboardingScreen> {
         nickname: widget.nickname,
         locationTermsAgreed: _locationAgreementChecked,
         notificationAllowed: false,
+      );
+
+      await LocationTrackingService.setConsentGranted(
+        _locationAgreementChecked,
       );
 
       if (!mounted) return;
