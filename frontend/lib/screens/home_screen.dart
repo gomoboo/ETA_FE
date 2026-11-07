@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../services/eta_api_service.dart';
 import 'appointments_tab.dart';
+import 'my_tab_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -30,7 +31,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     )
                   : _selectedTab == 1
                   ? const AppointmentsTab()
-                  : const _MyTabPlaceholder(),
+                  : const MyTabScreen(),
             ),
             _BottomNavigation(
               selectedIndex: _selectedTab,
@@ -511,28 +512,6 @@ class _FigmaHomeTabState extends State<_FigmaHomeTab> {
             },
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _MyTabPlaceholder extends StatelessWidget {
-  const _MyTabPlaceholder();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Padding(
-      padding: EdgeInsets.all(24),
-      child: Align(
-        alignment: Alignment.topLeft,
-        child: Text(
-          '마이',
-          style: TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.w700,
-            color: Color(0xFF18354A),
-          ),
-        ),
       ),
     );
   }

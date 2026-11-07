@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:geolocator/geolocator.dart';
 
 class LocationSample {
@@ -20,6 +21,29 @@ class LocationSample {
 }
 
 class LocationTrackingService {
+  static const String _consentKey = 'eta_location_consent';
+  static final Set<LocationTrackingService> _activeTrackers = {};
+
+  static Future<bool> isConsentGranted() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_consentKey) ?? false;
+  }
+
+  static Future<void> setConsentGranted(bool granted) async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = await prefs.setBool(_consentKey, granted);
+
+    if (!saved) {
+      throw StateError('위치 동의 설정 저장에 실패했습니다.');
+    }
+
+    if (!granted) {
+      for (final tracker in _activeTrackers.toList()) {
+        tracker.stop();
+      }
+    }
+  }
+
   Timer? _timer;
 
   bool _isRunning = false;
@@ -39,6 +63,11 @@ class LocationTrackingService {
       return;
     }
 
+    if (!await isConsentGranted()) {
+      onError?.call(StateError('위치 정보 이용에 동의하지 않았습니다.'));
+      return;
+    }
+
     final canUseLocation = await _prepareLocationPermission();
 
     if (!canUseLocation) {
@@ -46,7 +75,10 @@ class LocationTrackingService {
       return;
     }
 
+    if (!await isConsentGranted()) return;
+
     _isRunning = true;
+    _activeTrackers.add(this);
 
     // 시작하자마자 한 번 수집
     await _collectLocation(onLocation: onLocation, onError: onError);
@@ -67,6 +99,7 @@ class LocationTrackingService {
 
     _isRunning = false;
     _isCollecting = false;
+    _activeTrackers.remove(this);
   }
 
   Future<bool> _prepareLocationPermission() async {
@@ -133,7 +166,9 @@ class LocationTrackingService {
         collectedAt: DateTime.now(),
       );
 
-      onLocation(sample);
+      if (_isRunning && await isConsentGranted()) {
+        onLocation(sample);
+      }
     } catch (e) {
       onError?.call(e);
     } finally {
