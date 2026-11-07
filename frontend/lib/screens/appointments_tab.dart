@@ -658,7 +658,8 @@ class _AppointmentsTabState extends State<AppointmentsTab> {
                     ),
                   ),
                   IconButton(
-                    onPressed: () {},
+                    onPressed: () =>
+                        Navigator.pushNamed(context, '/notifications'),
                     icon: const Icon(
                       Icons.notifications_none_rounded,
                       color: accent,

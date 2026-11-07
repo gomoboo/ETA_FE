@@ -8,6 +8,7 @@ import 'screens/appointment_detail_screen.dart';
 import 'screens/appointment_join_screen.dart';
 import 'screens/live_map_screen.dart';
 import 'screens/onboarding_screen.dart';
+import 'screens/notification_list_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -39,6 +40,7 @@ class MyApp extends StatelessWidget {
         '/appointment-detail': (context) => const AppointmentDetailScreen(),
         '/appointment-join': (context) => const AppointmentJoinScreen(),
         '/live-map': (context) => const LiveMapScreen(),
+        '/notifications': (context) => const NotificationListScreen(),
       },
     );
   }

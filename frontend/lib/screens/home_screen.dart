@@ -453,7 +453,7 @@ class _FigmaHomeTabState extends State<_FigmaHomeTab> {
                 ),
               ),
               IconButton(
-                onPressed: () {},
+                onPressed: () => Navigator.pushNamed(context, '/notifications'),
                 icon: const Icon(
                   Icons.notifications_none_rounded,
                   color: _accent,
