@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../services/eta_api_service.dart';
 import 'friend_invite_screen.dart';
+import 'appointment_result_screen.dart';
 
 class AppointmentDetailScreen extends StatefulWidget {
   const AppointmentDetailScreen({super.key});
@@ -432,6 +433,23 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
             ),
           ),
           const SizedBox(height: 12),
+          TextButton(
+            onPressed: appointmentId == null
+                ? null
+                : () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => AppointmentResultScreen(
+                          appointmentId: appointmentId!,
+                        ),
+                      ),
+                    );
+                  },
+            child: const Text(
+              '약속 결과 보기 (테스트)',
+              style: TextStyle(color: accent, fontWeight: FontWeight.w700),
+            ),
+          ),
           TextButton(
             onPressed: _isLeaving ? null : _confirmLeaveAppointment,
             child: const Text(
