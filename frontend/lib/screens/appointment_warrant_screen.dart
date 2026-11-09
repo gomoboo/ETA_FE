@@ -1,4 +1,10 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter/rendering.dart';
+import 'package:gal/gal.dart';
+import 'package:share_plus/share_plus.dart';
 
 enum WarrantPenaltyMode { none, fee, penalty }
 
@@ -67,6 +73,8 @@ class _AppointmentWarrantScreenState extends State<AppointmentWarrantScreen> {
   static const _gray = Color(0xFF718696);
 
   int _currentIndex = 0;
+
+  final GlobalKey _warrantCardKey = GlobalKey();
 
   String _lateTime(int minutes) {
     final hours = minutes ~/ 60;
@@ -225,14 +233,147 @@ class _AppointmentWarrantScreenState extends State<AppointmentWarrantScreen> {
   }
 
 
+  Future<void> _saveWarrantImage() async {
+    try {
+      final renderObject =
+          _warrantCardKey.currentContext?.findRenderObject();
+
+      if (renderObject is! RenderRepaintBoundary) {
+        throw StateError('영장 카드 영역을 찾을 수 없습니다.');
+      }
+
+      final image = await renderObject.toImage(pixelRatio: 2.0);
+
+      try {
+        final byteData = await image.toByteData(
+          format: ui.ImageByteFormat.png,
+        );
+
+        if (byteData == null) {
+          throw StateError('이미지를 생성하지 못했습니다.');
+        }
+
+        final bytes = byteData.buffer.asUint8List();
+
+        await Gal.putImageBytes(
+          bytes,
+          name: 'ETA_Warrant_${DateTime.now().millisecondsSinceEpoch}',
+        );
+      } finally {
+        image.dispose();
+      }
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('영장 이미지가 사진 앱에 저장됐어요.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('이미지를 저장하지 못했어요. 사진 접근 권한을 확인해 주세요.'),
+        ),
+      );
+      debugPrint('영장 이미지 저장 오류: $error');
+    }
+  }
+
+  Future<void> _copyWarrantLink() async {
+    final link = widget.warrants[_currentIndex].shareLinkUrl?.trim();
+
+    if (link == null || link.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('이 영장에 제공된 공유 링크가 없어요.')),
+      );
+      return;
+    }
+
+    try {
+      await Clipboard.setData(ClipboardData(text: link));
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('영장 링크를 복사했어요.')),
+      );
+    } catch (error) {
+      debugPrint('영장 링크 복사 실패: $error');
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('링크를 복사하지 못했어요.')),
+      );
+    }
+  }
+
+  Future<void> _shareWarrantImage() async {
+    try {
+      final renderObject =
+          _warrantCardKey.currentContext?.findRenderObject();
+
+      if (renderObject is! RenderRepaintBoundary) {
+        throw StateError('영장 카드 영역을 찾을 수 없습니다.');
+      }
+
+      final image = await renderObject.toImage(pixelRatio: 2.0);
+
+      late final Uint8List bytes;
+
+      try {
+        final byteData = await image.toByteData(
+          format: ui.ImageByteFormat.png,
+        );
+
+        if (byteData == null) {
+          throw StateError('영장 이미지를 생성하지 못했습니다.');
+        }
+
+        bytes = byteData.buffer.asUint8List();
+      } finally {
+        image.dispose();
+      }
+
+      if (!mounted) return;
+
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [
+            XFile.fromData(
+              bytes,
+              mimeType: 'image/png',
+            ),
+          ],
+          fileNameOverrides: ['ETA_Warrant.png'],
+        ),
+      );
+    } catch (error) {
+      debugPrint('영장 이미지 공유 실패: $error');
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('영장 이미지를 공유하지 못했어요.'),
+        ),
+      );
+    }
+  }
+
   void _showShareSheet() {
-    Widget shareOption(String title, String message) {
+    Widget shareOption(String title, String message, {VoidCallback? onTap}) {
       return SizedBox(
         width: double.infinity,
         height: 58,
         child: OutlinedButton(
           onPressed: () {
             Navigator.of(context).pop();
+            if (onTap != null) {
+              onTap();
+              return;
+            }
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(content: Text(message)),
             );
@@ -316,16 +457,19 @@ class _AppointmentWarrantScreenState extends State<AppointmentWarrantScreen> {
                   shareOption(
                     '카카오톡으로 공유',
                     '카카오톡 공유 기능 연결이 필요해요.',
+                    onTap: _shareWarrantImage,
                   ),
                   const SizedBox(height: 14),
                   shareOption(
                     '이미지 저장',
                     '이미지 저장 기능 연결이 필요해요.',
+                    onTap: _saveWarrantImage,
                   ),
                   const SizedBox(height: 14),
                   shareOption(
                     '링크 복사',
                     '영장 링크 복사 기능 연결이 필요해요.',
+                    onTap: _copyWarrantLink,
                   ),
                 ],
               ),
@@ -384,7 +528,10 @@ class _AppointmentWarrantScreenState extends State<AppointmentWarrantScreen> {
                         constraints: BoxConstraints(
                           minHeight: constraints.maxHeight,
                         ),
-                        child: _warrantCard(warrant),
+                        child: RepaintBoundary(
+                          key: _warrantCardKey,
+                          child: _warrantCard(warrant),
+                        ),
                       ),
                     );
                   },
