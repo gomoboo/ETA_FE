@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../services/eta_api_service.dart';
 import 'friend_invite_screen.dart';
+import 'appointment_result_screen.dart';
 
 class AppointmentDetailScreen extends StatefulWidget {
   const AppointmentDetailScreen({super.key});
@@ -406,6 +407,65 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
     }
   }
 
+  Widget _bottomActionsByStatus() {
+    final future = detailFuture;
+    if (future == null) return const SizedBox.shrink();
+
+    return FutureBuilder<Map<String, dynamic>>(
+      future: future,
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const SizedBox.shrink();
+        }
+
+        final detail = snapshot.data!;
+        final status = (detail['status'] ?? detail['appointmentStatus'])
+            ?.toString()
+            .toUpperCase();
+
+        if (status == 'CANCELLED') {
+          return const SizedBox.shrink();
+        }
+
+        if (status != 'COMPLETED') {
+          return bottomActions();
+        }
+
+        final id = appointmentId;
+        if (id == null) return const SizedBox.shrink();
+
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
+          child: SizedBox(
+            width: double.infinity,
+            height: 52,
+            child: ElevatedButton(
+              onPressed: () {
+                Navigator.of(context).push<void>(
+                  MaterialPageRoute(
+                    builder: (_) => AppointmentResultScreen(appointmentId: id),
+                  ),
+                );
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: blue,
+                foregroundColor: navy,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(18),
+                ),
+              ),
+              child: const Text(
+                '약속 결과 보기',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget bottomActions() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
@@ -496,7 +556,7 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
                       },
                     ),
             ),
-            bottomActions(),
+            _bottomActionsByStatus(),
           ],
         ),
       ),

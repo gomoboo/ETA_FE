@@ -131,4 +131,8 @@ class EtaApiService {
   static Future<Map<String, dynamic>> getSettlement(int appointmentId) {
     return _request('GET', '/appointments/$appointmentId/settlement');
   }
+
+  static Future<Map<String, dynamic>> getWarrants(int appointmentId) {
+    return _request('GET', '/appointments/$appointmentId/warrant');
+  }
 }
