@@ -2446,7 +2446,7 @@ class _AppointmentCreateScreenState extends State<AppointmentCreateScreen> {
                             ),
                             SizedBox(height: 4),
                             Text(
-                              '입력한 내용은 유지돼요 · 다시 시도해 주세요.',
+                              '임시 저장됨 · 연결되면 약속을 만듭니다',
                               style: TextStyle(
                                 fontSize: 12,
                                 height: 1.4,
