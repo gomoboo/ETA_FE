@@ -74,8 +74,8 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
   // Figma 기준
   // ===============================================================
 
-  static const double _collapsedHeight = 301;
-  static const double _expandedHeight = 391;
+  static const double _collapsedHeight = 340;
+  static const double _expandedHeight = 430;
 
   double _sheetHeight = _collapsedHeight;
   bool _isDragging = false;
@@ -88,7 +88,6 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
   static const Color _navy = Color(0xFF18354A);
   static const Color _gray = Color(0xFF718696);
   static const Color _blue = Color(0xFF1685B5);
-  static const Color _buttonBlue = Color(0xFF7DD3F7);
 
   // 친구 마커 배경색
   static const Color _friendMarkerBackground = Color(0xFFE1F6FF);
@@ -183,10 +182,6 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
         .clamp(0.0, 1.0);
   }
 
-  double get _buttonProgress {
-    return ((_sheetHeight - 345) / (_expandedHeight - 345)).clamp(0.0, 1.0);
-  }
-
   double get _friendGap {
     return 12 + (2 * _sheetProgress);
   }
@@ -200,6 +195,11 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
     super.initState();
 
     _startLocationTracking();
+    _appointmentClockTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted && _cachedAppointmentDetail != null) {
+        setState(() {});
+      }
+    });
   }
 
   @override
@@ -378,13 +378,39 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
   final Set<String> _shownArrivalEvents = {};
   Map<String, dynamic>? _cachedAppointmentDetail;
 
+  Timer? _appointmentClockTimer;
+
+  String get _radarAppointmentTitle {
+    final title = _cachedAppointmentDetail?['title']?.toString().trim();
+    return title == null || title.isEmpty ? '약속 정보 확인 중' : title;
+  }
+
+  String _radarTimeLabel() {
+    final meetAt = DateTime.tryParse(
+      _cachedAppointmentDetail?['meetAt']?.toString() ?? '',
+    )?.toLocal();
+
+    if (meetAt == null) return '약속 시간 확인 중';
+
+    final seconds = meetAt.difference(DateTime.now()).inSeconds;
+
+    if (seconds > 0) {
+      return '약속까지 ${(seconds + 59) ~/ 60}분';
+    }
+
+    final minutes = DateTime.now().difference(meetAt).inMinutes;
+    return minutes == 0 ? '약속 시간이 되었어요' : '약속 시간 $minutes분 경과';
+  }
+
   Future<void> _loadAppointmentDetail(int appointmentId) async {
     try {
       final detail = await EtaApiService.getAppointmentDetail(appointmentId);
 
       if (!mounted) return;
 
-      _cachedAppointmentDetail = detail;
+      setState(() {
+        _cachedAppointmentDetail = detail;
+      });
       debugPrint('ETA 체크인: 약속 상세 정보 미리 저장 완료');
 
       final sample = _latestLocation;
@@ -553,9 +579,8 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
 
   void _radarNotice(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<void> _openSettlementFromRadar() async {
@@ -567,68 +592,28 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
     }
 
     try {
-      final detail = await EtaApiService.getAppointmentDetail(id);
+      final settlement = await EtaApiService.getSettlement(id);
       if (!mounted) return;
 
-      final status = detail['status']?.toString().toUpperCase() ?? '';
-      const completedStatuses = {
-        'COMPLETED', 'ENDED', 'FINISHED', 'CLOSED'
-      };
-
-      if (!completedStatuses.contains(status)) {
-        _radarNotice('약속이 종료된 뒤 지각 정산을 확인할 수 있어요.');
+      final participants = settlement['participants'];
+      if (participants is! List || participants.isEmpty) {
+        _radarNotice('아직 정산 결과가 준비되지 않았어요.');
         return;
       }
 
       await Navigator.of(context).push<void>(
         MaterialPageRoute(
-          builder: (_) => AppointmentResultScreen(
-            appointmentId: id,
-          ),
+          builder: (_) => AppointmentResultScreen(appointmentId: id),
         ),
       );
     } catch (error) {
       debugPrint('레이더 정산 화면 이동 실패: $error');
-      _radarNotice('정산 정보를 확인하지 못했어요.');
+      if (error.toString().contains('아직 정산할 수 없는 약속')) {
+        _radarNotice('약속이 종료되면 정산을 확인할 수 있어요.');
+      } else {
+        _radarNotice('정산 정보를 확인하지 못했어요.');
+      }
     }
-  }
-
-  void _showMyArrivalStatus() {
-    if (_myArrivalConfirmed) {
-      _radarNotice('서버에서 내 도착을 확인했어요.');
-      return;
-    }
-
-    if (!_socketService.isConnected) {
-      _radarNotice('실시간 연결 상태를 확인해 주세요.');
-      return;
-    }
-
-    if (_checkingScreenOpen) {
-      _radarNotice('서버에서 도착 상태를 확인하고 있어요.');
-      return;
-    }
-
-    final sample = _latestLocation;
-    if (sample == null) {
-      _radarNotice('현재 위치를 확인하고 있어요.');
-      return;
-    }
-
-    final distance = _distanceToMeetingPlace(sample);
-    if (distance == null) {
-      _radarNotice('약속 장소 정보를 확인하고 있어요.');
-      return;
-    }
-
-    if (distance <= 30) {
-      _maybeShowArrivalChecking(sample);
-      return;
-    }
-
-    _radarNotice(
-      '약속 장소 반경 30m에 도착하면 자동 체크인이 시작돼요.',
-    );
   }
 
   Future<void> _startLocationTracking() async {
@@ -923,6 +908,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
 
   @override
   void dispose() {
+    _appointmentClockTimer?.cancel();
     _locationTrackingService.dispose();
     unawaited(_socketService.dispose());
     _checkingStatus.dispose();
@@ -936,8 +922,6 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final buttonProgress = _buttonProgress;
-
     return Scaffold(
       backgroundColor: _background,
       body: SafeArea(
@@ -1065,13 +1049,13 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
 
                     const SizedBox(width: 14),
 
-                    const Expanded(
+                    Expanded(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            '강남역 맛집 탐방',
+                            _radarAppointmentTitle,
                             style: TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.w700,
@@ -1080,7 +1064,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
                           ),
                           SizedBox(height: 4),
                           Text(
-                            '약속까지 12분 · 위치 공유 중',
+                            '${_radarTimeLabel()} · 위치 공유 중',
                             style: TextStyle(fontSize: 12, color: _blue),
                           ),
                         ],
@@ -1142,7 +1126,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
                         top: 16,
                         left: 24,
                         right: 24,
-                        bottom: 12 + (116 * buttonProgress),
+                        bottom: 12,
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -1220,45 +1204,6 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
                       // =================================================
                       // 펼침 상태 버튼
                       // =================================================
-                      Positioned(
-                        left: 24,
-                        right: 24,
-                        bottom: 64,
-                        child: IgnorePointer(
-                          ignoring: buttonProgress < 0.95,
-                          child: Transform.translate(
-                            offset: Offset(0, 8 * (1 - buttonProgress)),
-                            child: Opacity(
-                              opacity: buttonProgress,
-                              child: SizedBox(
-                                height: 52,
-                                child: ElevatedButton(
-                                  onPressed: buttonProgress >= 0.95
-                                      ? _showMyArrivalStatus
-                                      : null,
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: _buttonBlue,
-                                    disabledBackgroundColor: _buttonBlue,
-                                    foregroundColor: _navy,
-                                    disabledForegroundColor: _navy,
-                                    elevation: 0,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(14),
-                                    ),
-                                  ),
-                                  child: const Text(
-                                    '내 도착 상태 확인',
-                                    style: TextStyle(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
                     ],
                   ),
                 ),
