@@ -164,6 +164,26 @@ class _AppointmentsTabState extends State<AppointmentsTab> {
 
       final message = error.toString().toLowerCase();
 
+      final endedInvite =
+          message.contains('종료') ||
+          message.contains('만료') ||
+          message.contains('expired') ||
+          message.contains('completed');
+
+      if (endedInvite) {
+        await Navigator.push<void>(
+          context,
+          MaterialPageRoute(
+            builder: (_) => InvitedAppointmentScreen(
+              inviteCode: code,
+              preview: const <String, dynamic>{'status': 'ENDED'},
+            ),
+          ),
+        );
+        if (mounted) refresh();
+        return;
+      }
+
       final notFound =
           message.contains('404') ||
           message.contains('not_found') ||
