@@ -2421,21 +2421,39 @@ class _AppointmentCreateScreenState extends State<AppointmentCreateScreen> {
                 Padding(
                   padding: const EdgeInsets.fromLTRB(24, 0, 24, 0),
                   child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Icon(
-                        Icons.error_outline,
-                        size: 18,
-                        color: Color(0xFFFF5D5D),
+                      const Padding(
+                        padding: EdgeInsets.only(top: 2),
+                        child: Icon(
+                          Icons.error_outline,
+                          size: 20,
+                          color: Color(0xFFFF5D5D),
+                        ),
                       ),
-                      const SizedBox(width: 7),
+                      const SizedBox(width: 8),
                       const Expanded(
-                        child: Text(
-                          '약속을 생성하지 못했어요. 연결을 확인하고 다시 시도해 주세요.',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: Color(0xFFFF5D5D),
-                          ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '약속을 생성하지 못했어요. 연결을 확인해 주세요.',
+                              style: TextStyle(
+                                fontSize: 12,
+                                height: 1.4,
+                                color: Color(0xFFFF5D5D),
+                              ),
+                            ),
+                            SizedBox(height: 4),
+                            Text(
+                              '입력한 내용은 유지돼요 · 다시 시도해 주세요.',
+                              style: TextStyle(
+                                fontSize: 12,
+                                height: 1.4,
+                                color: Color(0xFFFF5D5D),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
