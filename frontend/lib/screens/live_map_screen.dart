@@ -10,6 +10,7 @@ import '../services/eta_websocket_service.dart';
 import '../services/guest_identity_service.dart';
 import '../services/eta_api_service.dart';
 import 'arrival_checkin_screen.dart';
+import 'appointment_result_screen.dart';
 
 class FriendRadarData {
   const FriendRadarData({
@@ -109,6 +110,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
   final EtaWebSocketService _socketService = EtaWebSocketService();
   bool _socketStarted = false;
   bool _myArrivalConfirmed = false;
+  int? _activeAppointmentId;
 
   // ===============================================================
   // Kakao Map
@@ -213,6 +215,10 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
     if (arguments is Map) {
       final appointmentId = arguments['appointmentId'];
       final participantId = arguments['myParticipantId'];
+
+      if (appointmentId is int) {
+        _activeAppointmentId = appointmentId;
+      }
       final nickname = arguments['nickname'];
 
       if (nickname is String && nickname.trim().isNotEmpty) {
@@ -543,6 +549,86 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
         }),
       );
     });
+  }
+
+  void _radarNotice(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
+  Future<void> _openSettlementFromRadar() async {
+    final id = _activeAppointmentId;
+
+    if (id == null) {
+      _radarNotice('약속 정보를 확인할 수 없어요.');
+      return;
+    }
+
+    try {
+      final detail = await EtaApiService.getAppointmentDetail(id);
+      if (!mounted) return;
+
+      final status = detail['status']?.toString().toUpperCase() ?? '';
+      const completedStatuses = {
+        'COMPLETED', 'ENDED', 'FINISHED', 'CLOSED'
+      };
+
+      if (!completedStatuses.contains(status)) {
+        _radarNotice('약속이 종료된 뒤 지각 정산을 확인할 수 있어요.');
+        return;
+      }
+
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute(
+          builder: (_) => AppointmentResultScreen(
+            appointmentId: id,
+          ),
+        ),
+      );
+    } catch (error) {
+      debugPrint('레이더 정산 화면 이동 실패: $error');
+      _radarNotice('정산 정보를 확인하지 못했어요.');
+    }
+  }
+
+  void _showMyArrivalStatus() {
+    if (_myArrivalConfirmed) {
+      _radarNotice('서버에서 내 도착을 확인했어요.');
+      return;
+    }
+
+    if (!_socketService.isConnected) {
+      _radarNotice('실시간 연결 상태를 확인해 주세요.');
+      return;
+    }
+
+    if (_checkingScreenOpen) {
+      _radarNotice('서버에서 도착 상태를 확인하고 있어요.');
+      return;
+    }
+
+    final sample = _latestLocation;
+    if (sample == null) {
+      _radarNotice('현재 위치를 확인하고 있어요.');
+      return;
+    }
+
+    final distance = _distanceToMeetingPlace(sample);
+    if (distance == null) {
+      _radarNotice('약속 장소 정보를 확인하고 있어요.');
+      return;
+    }
+
+    if (distance <= 30) {
+      _maybeShowArrivalChecking(sample);
+      return;
+    }
+
+    _radarNotice(
+      '약속 장소 반경 30m에 도착하면 자동 체크인이 시작돼요.',
+    );
   }
 
   Future<void> _startLocationTracking() async {
@@ -1002,10 +1088,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
                     ),
 
                     TextButton(
-                      onPressed: () {
-                        // TODO:
-                        // 정산 화면 연결
-                      },
+                      onPressed: _openSettlementFromRadar,
                       child: const Text(
                         '정산',
                         style: TextStyle(
@@ -1151,10 +1234,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
                                 height: 52,
                                 child: ElevatedButton(
                                   onPressed: buttonProgress >= 0.95
-                                      ? () {
-                                          // TODO:
-                                          // 내 도착 상태 확인
-                                        }
+                                      ? _showMyArrivalStatus
                                       : null,
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: _buttonBlue,
