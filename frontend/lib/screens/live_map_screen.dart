@@ -10,6 +10,7 @@ import '../services/eta_websocket_service.dart';
 import '../services/guest_identity_service.dart';
 import '../services/eta_api_service.dart';
 import 'arrival_checkin_screen.dart';
+import 'appointment_result_screen.dart';
 
 class FriendRadarData {
   const FriendRadarData({
@@ -73,10 +74,49 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
   // Figma 기준
   // ===============================================================
 
-  static const double _collapsedHeight = 301;
-  static const double _expandedHeight = 391;
+  static const double _collapsedHeight = 300;
+  static const int _collapsedFriendLimit = 3;
+  static const double _radarHeaderHeight = 118;
+  static const int _initialMapZoomLevel = 16;
+  static const double _friendGap = 12;
+  static const double _pokeButtonHeight = 32;
+  static const double _pokeButtonGap = 12;
 
-  double _sheetHeight = _collapsedHeight;
+  double get _expandedHeight {
+    final extraRows = _friends.length - _collapsedFriendLimit;
+    if (extraRows <= 0) return _collapsedHeight;
+
+    final desiredHeight =
+        _collapsedHeight +
+        extraRows * (_FriendStatusRow.rowHeight + _friendGap);
+    final availableHeight =
+        MediaQuery.sizeOf(context).height -
+        MediaQuery.paddingOf(context).vertical -
+        _radarHeaderHeight -
+        _pokeButtonHeight -
+        _pokeButtonGap;
+
+    if (availableHeight <= _collapsedHeight) return _collapsedHeight;
+    return desiredHeight.clamp(_collapsedHeight, availableHeight).toDouble();
+  }
+
+  bool get _canExpandSheet => _expandedHeight > _collapsedHeight;
+
+  double _sheetProgress = 0;
+
+  double get _sheetHeight =>
+      _collapsedHeight + (_expandedHeight - _collapsedHeight) * _sheetProgress;
+
+  set _sheetHeight(double height) {
+    final travel = _expandedHeight - _collapsedHeight;
+    _sheetProgress = travel > 0
+        ? ((height - _collapsedHeight) / travel).clamp(0.0, 1.0).toDouble()
+        : 0.0;
+  }
+
+  int get _collapsedFriendCount =>
+      _friends.length.clamp(0, _collapsedFriendLimit).toInt();
+
   bool _isDragging = false;
 
   // ===============================================================
@@ -87,10 +127,9 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
   static const Color _navy = Color(0xFF18354A);
   static const Color _gray = Color(0xFF718696);
   static const Color _blue = Color(0xFF1685B5);
-  static const Color _buttonBlue = Color(0xFF7DD3F7);
 
   // 친구 마커 배경색
-  static const Color _friendMarkerBackground = Color(0xFFE1F6FF);
+  static const Color _friendMarkerBackground = Color(0xFFECF7FD);
 
   // 찌르기 버튼
   static const Color _pokeBackground = Color(0xFFFFFDED);
@@ -109,6 +148,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
   final EtaWebSocketService _socketService = EtaWebSocketService();
   bool _socketStarted = false;
   bool _myArrivalConfirmed = false;
+  int? _activeAppointmentId;
 
   // ===============================================================
   // Kakao Map
@@ -175,20 +215,6 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
   // 바텀시트 진행도
   // ===============================================================
 
-  double get _sheetProgress {
-    return ((_sheetHeight - _collapsedHeight) /
-            (_expandedHeight - _collapsedHeight))
-        .clamp(0.0, 1.0);
-  }
-
-  double get _buttonProgress {
-    return ((_sheetHeight - 345) / (_expandedHeight - 345)).clamp(0.0, 1.0);
-  }
-
-  double get _friendGap {
-    return 12 + (2 * _sheetProgress);
-  }
-
   // ===============================================================
   // 초기화
   // ===============================================================
@@ -198,6 +224,11 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
     super.initState();
 
     _startLocationTracking();
+    _appointmentClockTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted && _cachedAppointmentDetail != null) {
+        setState(() {});
+      }
+    });
   }
 
   @override
@@ -213,6 +244,10 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
     if (arguments is Map) {
       final appointmentId = arguments['appointmentId'];
       final participantId = arguments['myParticipantId'];
+
+      if (appointmentId is int) {
+        _activeAppointmentId = appointmentId;
+      }
       final nickname = arguments['nickname'];
 
       if (nickname is String && nickname.trim().isNotEmpty) {
@@ -341,14 +376,38 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
                   : '${distance.round()}m')
             : '거리 확인 중';
 
-        String status = eta is num ? '${eta.round()}분 후' : '위치 확인 중';
+        final etaMinutes = eta is num && eta.isFinite && eta >= 0
+            ? eta.ceil()
+            : null;
+
+        final meetAt = DateTime.tryParse(
+          _cachedAppointmentDetail?['meetAt']?.toString() ?? '',
+        )?.toLocal();
+
+        final secondsRemaining = meetAt?.difference(DateTime.now()).inSeconds;
+
+        final minutesRemaining = secondsRemaining == null
+            ? null
+            : secondsRemaining > 0
+            ? (secondsRemaining + 59) ~/ 60
+            : 0;
+
+        final lateRisk =
+            etaMinutes != null &&
+            minutesRemaining != null &&
+            etaMinutes > minutesRemaining;
+
+        String status = etaMinutes == null ? '위치 확인 중' : '$etaMinutes분 후';
 
         if (movement == 'ARRIVED') {
           status = '도착 완료';
         } else if (movement == 'SUSPECTED_NOT_DEPARTED') {
           status = '미출발 의심';
-        } else if (movement == 'LATE') {
+        } else if (movement == 'LATE' ||
+            (minutesRemaining != null && minutesRemaining <= 0)) {
           status = '지각 중';
+        } else if (lateRisk) {
+          status = '$etaMinutes분 후 · 지각 위험';
         }
 
         if (!mounted) return;
@@ -360,7 +419,10 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
           distanceText: distanceText,
           speedKmh: speed is num ? speed.toDouble() : 0,
           status: status,
-          warning: movement == 'SUSPECTED_NOT_DEPARTED',
+          warning:
+              lateRisk ||
+              movement == 'SUSPECTED_NOT_DEPARTED' ||
+              movement == 'LATE',
         );
       }
     } catch (error) {
@@ -372,14 +434,171 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
   final Set<String> _shownArrivalEvents = {};
   Map<String, dynamic>? _cachedAppointmentDetail;
 
+  Timer? _appointmentClockTimer;
+
+  String get _radarAppointmentTitle {
+    final title = _cachedAppointmentDetail?['title']?.toString().trim();
+    return title == null || title.isEmpty ? '약속 정보 확인 중' : title;
+  }
+
+  String _radarTimeLabel() {
+    final meetAt = DateTime.tryParse(
+      _cachedAppointmentDetail?['meetAt']?.toString() ?? '',
+    )?.toLocal();
+
+    if (meetAt == null) return '약속 시간 확인 중';
+
+    final seconds = meetAt.difference(DateTime.now()).inSeconds;
+
+    if (seconds > 0) {
+      return '약속까지 ${(seconds + 59) ~/ 60}분';
+    }
+
+    final minutes = DateTime.now().difference(meetAt).inMinutes;
+    return minutes == 0 ? '약속 시간이 되었어요' : '약속 시간 $minutes분 경과';
+  }
+
+  bool _appointmentPlaceMarkerAdded = false;
+  bool _appointmentPlaceMarkerLoading = false;
+
+  static const double _radarMarkerDiameter = 40;
+
+  Future<void> _renderAppointmentPlaceMarker() async {
+    if (_appointmentPlaceMarkerAdded || _appointmentPlaceMarkerLoading) {
+      return;
+    }
+
+    final controller = _mapController;
+    final detail = _cachedAppointmentDetail;
+
+    if (!mounted || controller == null || detail == null) return;
+
+    double? coordinate(dynamic value) {
+      if (value is num) return value.toDouble();
+      return double.tryParse(value?.toString() ?? '');
+    }
+
+    final targetPlace = detail['targetPlace'];
+    if (targetPlace is! Map) return;
+
+    final latitude = coordinate(targetPlace['latitude']);
+    final longitude = coordinate(targetPlace['longitude']);
+    final placeName = targetPlace['name']?.toString().trim() ?? '';
+
+    if (latitude == null ||
+        longitude == null ||
+        !latitude.isFinite ||
+        !longitude.isFinite ||
+        latitude < -90 ||
+        latitude > 90 ||
+        longitude < -180 ||
+        longitude > 180 ||
+        placeName.isEmpty) {
+      debugPrint('ETA 레이더: 약속 장소명 또는 좌표가 없어 마커 생략');
+      return;
+    }
+
+    _appointmentPlaceMarkerLoading = true;
+
+    try {
+      final icon = await KImage.fromWidget(
+        SizedBox(
+          width: 220,
+          height: 100,
+          child: Column(
+            children: [
+              Container(
+                width: _radarMarkerDiameter,
+                height: _radarMarkerDiameter,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: const Color(0xFF1179AB), width: 3),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.13),
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: const Icon(
+                  Icons.location_on_outlined,
+                  color: Color(0xFF1179AB),
+                  size: 24,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Container(
+                constraints: const BoxConstraints(maxWidth: 210),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(24),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.08),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Text(
+                  placeName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF1F3448),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const Size(220, 100),
+      );
+
+      if (!mounted || !identical(_mapController, controller)) return;
+
+      final position = LatLng(latitude, longitude);
+      await controller.labelLayer.addPoi(
+        position,
+        id: 'eta-appointment-place',
+        style: PoiStyle(anchor: const KPoint(0.5, 0.20), icon: icon),
+      );
+
+      _appointmentPlaceMarkerAdded = true;
+      if (!mounted || !identical(_mapController, controller)) return;
+
+      await controller.moveCamera(
+        CameraUpdate.newCenterPosition(
+          position,
+          zoomLevel: _initialMapZoomLevel,
+        ),
+      );
+      debugPrint('ETA 레이더: 약속 장소 마커 표시 완료 - $placeName');
+    } catch (error) {
+      debugPrint('ETA 레이더: 약속 장소 마커 표시 실패 - $error');
+    } finally {
+      _appointmentPlaceMarkerLoading = false;
+    }
+  }
+
   Future<void> _loadAppointmentDetail(int appointmentId) async {
     try {
       final detail = await EtaApiService.getAppointmentDetail(appointmentId);
 
       if (!mounted) return;
 
-      _cachedAppointmentDetail = detail;
+      setState(() {
+        _cachedAppointmentDetail = detail;
+      });
       debugPrint('ETA 체크인: 약속 상세 정보 미리 저장 완료');
+      await _renderAppointmentPlaceMarker();
 
       final sample = _latestLocation;
       if (sample != null) _maybeShowArrivalChecking(sample);
@@ -545,6 +764,45 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
     });
   }
 
+  void _radarNotice(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _openSettlementFromRadar() async {
+    final id = _activeAppointmentId;
+
+    if (id == null) {
+      _radarNotice('약속 정보를 확인할 수 없어요.');
+      return;
+    }
+
+    try {
+      final settlement = await EtaApiService.getSettlement(id);
+      if (!mounted) return;
+
+      final participants = settlement['participants'];
+      if (participants is! List || participants.isEmpty) {
+        _radarNotice('아직 정산 결과가 준비되지 않았어요.');
+        return;
+      }
+
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute(
+          builder: (_) => AppointmentResultScreen(appointmentId: id),
+        ),
+      );
+    } catch (error) {
+      debugPrint('레이더 정산 화면 이동 실패: $error');
+      if (error.toString().contains('아직 정산할 수 없는 약속')) {
+        _radarNotice('약속이 종료되면 정산을 확인할 수 있어요.');
+      } else {
+        _radarNotice('정산 정보를 확인하지 못했어요.');
+      }
+    }
+  }
+
   Future<void> _startLocationTracking() async {
     await _locationTrackingService.start(
       onLocation: (sample) {
@@ -613,13 +871,13 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
   }) async {
     return KImage.fromWidget(
       Container(
-        width: 48,
-        height: 48,
+        width: _radarMarkerDiameter,
+        height: _radarMarkerDiameter,
         alignment: Alignment.center,
         decoration: BoxDecoration(
           color: backgroundColor,
           shape: BoxShape.circle,
-          border: Border.all(color: Colors.white, width: 3),
+          border: Border.all(color: Colors.white, width: 2),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.15),
@@ -632,12 +890,12 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
           initial,
           style: TextStyle(
             color: textColor,
-            fontSize: 16,
+            fontSize: 14,
             fontWeight: FontWeight.w700,
           ),
         ),
       ),
-      const Size(48, 48),
+      const Size(_radarMarkerDiameter, _radarMarkerDiameter),
     );
   }
 
@@ -655,7 +913,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
       final icon = await _buildCircleMarkerIcon(
         initial: friend.initial,
         backgroundColor: _friendMarkerBackground,
-        textColor: _blue,
+        textColor: const Color(0xFF1F3448),
       );
 
       final poi = await controller.labelLayer.addPoi(
@@ -705,7 +963,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
         final icon = await _buildCircleMarkerIcon(
           initial: friend.initial,
           backgroundColor: _friendMarkerBackground,
-          textColor: _blue,
+          textColor: const Color(0xFF1F3448),
         );
 
         if (!mounted || _friendPois.containsKey(id)) return;
@@ -766,8 +1024,8 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
         initial: _myInitial,
 
         // 친구와 색상 반전
-        backgroundColor: _blue,
-        textColor: _friendMarkerBackground,
+        backgroundColor: const Color(0xFF3875A1),
+        textColor: Colors.white,
       );
 
       _myPoi = await controller.labelLayer.addPoi(
@@ -780,12 +1038,18 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
       await _myPoi!.move(position, 500);
     }
 
-    // 지도 첫 진입 시 내 위치로 한 번 이동
-    if (!_didMoveCameraToMyLocation) {
+    // 약속 정보 없이 레이더를 열면 내 위치를 중심으로 표시한다.
+    if (!_didMoveCameraToMyLocation && mounted) {
+      final arguments = ModalRoute.of(context)?.settings.arguments;
+      if (arguments is Map && arguments['appointmentId'] is int) return;
+
       _didMoveCameraToMyLocation = true;
 
       await controller.moveCamera(
-        CameraUpdate.newCenterPosition(position, zoomLevel: 16),
+        CameraUpdate.newCenterPosition(
+          position,
+          zoomLevel: _initialMapZoomLevel,
+        ),
         animation: const CameraAnimation(700),
       );
     }
@@ -837,6 +1101,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
 
   @override
   void dispose() {
+    _appointmentClockTimer?.cancel();
     _locationTrackingService.dispose();
     unawaited(_socketService.dispose());
     _checkingStatus.dispose();
@@ -850,7 +1115,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final buttonProgress = _buttonProgress;
+    const headerBottom = _radarHeaderHeight - 10;
 
     return Scaffold(
       backgroundColor: _background,
@@ -863,7 +1128,8 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
             // =========================================================
 
             Positioned.fill(
-              top: 118,
+              top: headerBottom,
+              bottom: _collapsedHeight,
               child: Container(
                 color: const Color(0xFFEBF2F6),
                 child: Stack(
@@ -871,11 +1137,13 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
                     KakaoMap(
                       option: const KakaoMapOption(
                         position: LatLng(37.4979, 127.0276),
-                        zoomLevel: 16,
+                        zoomLevel: _initialMapZoomLevel,
                         mapType: MapType.normal,
                       ),
                       onMapReady: (KakaoMapController controller) async {
                         _mapController = controller;
+                        _appointmentPlaceMarkerAdded = false;
+                        await _renderAppointmentPlaceMarker();
 
                         debugPrint('카카오 지도 로딩 완료');
 
@@ -887,64 +1155,6 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
                           await _updateMyLocationMarker(_latestLocation!);
                         }
                       },
-                    ),
-
-                    // =================================================
-                    // 찌르기 버튼
-                    // =================================================
-                    Positioned(
-                      left: 147,
-                      top: 384,
-                      child: Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(16),
-                          onTap: () {
-                            debugPrint('찌르기 버튼 클릭');
-
-                            // TODO:
-                            // 나중에 poke:send 연결
-                          },
-                          child: Container(
-                            width: 67,
-                            height: 32,
-                            decoration: BoxDecoration(
-                              color: _pokeBackground,
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(
-                                color: _pokeBorder,
-                                width: 1.5,
-                              ),
-                            ),
-                            child: const Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: Icon(
-                                    Icons.bolt_rounded,
-                                    size: 16,
-                                    color: _pokeBorder,
-                                  ),
-                                ),
-                                SizedBox(width: 2),
-                                Text(
-                                  '찌르기',
-                                  style: TextStyle(
-                                    fontFamily: 'Noto Sans KR',
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w700,
-                                    color: _pokeText,
-                                    height: 1.5,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
                     ),
                   ],
                 ),
@@ -958,34 +1168,34 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
               top: 0,
               left: 0,
               right: 0,
-              height: 118,
+              height: headerBottom,
               child: Container(
                 color: _background,
-                padding: const EdgeInsets.fromLTRB(24, 20, 24, 12),
+                padding: const EdgeInsets.fromLTRB(12, 10, 24, 12),
                 child: Row(
                   children: [
-                    IconButton(
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                      onPressed: () {
-                        Navigator.of(context).pop();
-                      },
-                      icon: const Icon(
-                        Icons.arrow_back_ios_new_rounded,
-                        size: 20,
-                        color: _blue,
+                    SizedBox.square(
+                      dimension: 48,
+                      child: IconButton(
+                        padding: EdgeInsets.zero,
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                        },
+                        icon: const Icon(
+                          Icons.arrow_back_ios_new_rounded,
+                          size: 20,
+                          color: _blue,
+                        ),
                       ),
                     ),
 
-                    const SizedBox(width: 14),
-
-                    const Expanded(
+                    Expanded(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            '강남역 맛집 탐방',
+                            _radarAppointmentTitle,
                             style: TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.w700,
@@ -994,7 +1204,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
                           ),
                           SizedBox(height: 4),
                           Text(
-                            '약속까지 12분 · 위치 공유 중',
+                            '${_radarTimeLabel()} · 위치 공유 중',
                             style: TextStyle(fontSize: 12, color: _blue),
                           ),
                         ],
@@ -1002,12 +1212,9 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
                     ),
 
                     TextButton(
-                      onPressed: () {
-                        // TODO:
-                        // 정산 화면 연결
-                      },
+                      onPressed: _openSettlementFromRadar,
                       child: const Text(
-                        '정산',
+                        '지각 정산',
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w700,
@@ -1016,6 +1223,66 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
                       ),
                     ),
                   ],
+                ),
+              ),
+            ),
+
+            AnimatedPositioned(
+              duration: _isDragging
+                  ? Duration.zero
+                  : const Duration(milliseconds: 220),
+              curve: Curves.easeOut,
+              left: 0,
+              right: 0,
+              bottom: _sheetHeight + _pokeButtonGap,
+              height: _pokeButtonHeight,
+              child: Center(
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(16),
+                    onTap: () {
+                      debugPrint('찌르기 버튼 클릭');
+
+                      // TODO:
+                      // 나중에 poke:send 연결
+                    },
+                    child: Container(
+                      width: 67,
+                      height: _pokeButtonHeight,
+                      decoration: BoxDecoration(
+                        color: _pokeBackground,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: _pokeBorder, width: 1.5),
+                      ),
+                      child: const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: Icon(
+                              Icons.bolt_rounded,
+                              size: 16,
+                              color: _pokeBorder,
+                            ),
+                          ),
+                          SizedBox(width: 2),
+                          Text(
+                            '찌르기',
+                            style: TextStyle(
+                              fontFamily: 'Noto Sans KR',
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: _pokeText,
+                              height: 1.5,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -1059,16 +1326,22 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
                         top: 16,
                         left: 24,
                         right: 24,
-                        bottom: 12 + (116 * buttonProgress),
+                        bottom: 12,
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             // 손잡이
                             GestureDetector(
                               behavior: HitTestBehavior.opaque,
-                              onVerticalDragStart: _onDragStart,
-                              onVerticalDragUpdate: _onDragUpdate,
-                              onVerticalDragEnd: _onDragEnd,
+                              onVerticalDragStart: _canExpandSheet
+                                  ? _onDragStart
+                                  : null,
+                              onVerticalDragUpdate: _canExpandSheet
+                                  ? _onDragUpdate
+                                  : null,
+                              onVerticalDragEnd: _canExpandSheet
+                                  ? _onDragEnd
+                                  : null,
                               child: SizedBox(
                                 width: double.infinity,
                                 height: 20,
@@ -1091,7 +1364,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
                                 Text(
                                   '친구들은 오는 중',
                                   style: TextStyle(
-                                    fontSize: 18,
+                                    fontSize: 20,
                                     fontWeight: FontWeight.w700,
                                     color: _navy,
                                   ),
@@ -1109,12 +1382,16 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
                               child: ListView.builder(
                                 padding: EdgeInsets.zero,
                                 physics: const ClampingScrollPhysics(),
-                                itemCount: _friends.length,
+                                itemCount: _sheetProgress == 0
+                                    ? _collapsedFriendCount
+                                    : _friends.length,
                                 itemBuilder: (context, index) {
                                   final friend = _friends[index];
 
                                   return Padding(
                                     padding: EdgeInsets.only(
+                                      left: 8,
+                                      right: 8,
                                       bottom: index == _friends.length - 1
                                           ? 0
                                           : _friendGap,
@@ -1137,48 +1414,6 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
                       // =================================================
                       // 펼침 상태 버튼
                       // =================================================
-                      Positioned(
-                        left: 24,
-                        right: 24,
-                        bottom: 64,
-                        child: IgnorePointer(
-                          ignoring: buttonProgress < 0.95,
-                          child: Transform.translate(
-                            offset: Offset(0, 8 * (1 - buttonProgress)),
-                            child: Opacity(
-                              opacity: buttonProgress,
-                              child: SizedBox(
-                                height: 52,
-                                child: ElevatedButton(
-                                  onPressed: buttonProgress >= 0.95
-                                      ? () {
-                                          // TODO:
-                                          // 내 도착 상태 확인
-                                        }
-                                      : null,
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: _buttonBlue,
-                                    disabledBackgroundColor: _buttonBlue,
-                                    foregroundColor: _navy,
-                                    disabledForegroundColor: _navy,
-                                    elevation: 0,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(14),
-                                    ),
-                                  ),
-                                  child: const Text(
-                                    '내 도착 상태 확인',
-                                    style: TextStyle(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
                     ],
                   ),
                 ),
@@ -1196,6 +1431,8 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
 // =================================================================
 
 class _FriendStatusRow extends StatelessWidget {
+  static const double rowHeight = 50;
+
   const _FriendStatusRow({
     required this.initial,
     required this.name,
@@ -1213,67 +1450,65 @@ class _FriendStatusRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 44,
+      height: rowHeight,
       child: Row(
         children: [
-          // 친구 아이콘
           Container(
-            width: 44,
-            height: 44,
+            width: 46,
+            height: 46,
             alignment: Alignment.center,
             decoration: const BoxDecoration(
-              color: Color(0xFFEAF7FE),
+              color: Color(0xFFECF7FD),
               shape: BoxShape.circle,
             ),
             child: Text(
               initial,
               style: const TextStyle(
-                fontSize: 16,
+                color: Color(0xFF3875A1),
+                fontSize: 17,
                 fontWeight: FontWeight.w700,
-                color: Color(0xFF1685B5),
               ),
             ),
           ),
-
-          const SizedBox(width: 14),
-
-          // 이름 + 거리/속도
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Text(
                   name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    fontSize: 15,
+                    color: Color(0xFF1F3448),
+                    fontSize: 17,
                     fontWeight: FontWeight.w700,
-                    color: Color(0xFF18354A),
                   ),
                 ),
-
                 const SizedBox(height: 2),
-
                 Text(
                   detail,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    fontSize: 12,
-                    color: Color(0xFF718696),
+                    color: Color(0xFF70879A),
+                    fontSize: 14,
                   ),
                 ),
               ],
             ),
           ),
-
-          // 예상 도착 / 경고
+          const SizedBox(width: 8),
           Text(
             status,
+            maxLines: 1,
             style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
               color: warning
-                  ? const Color(0xFFD46B2B)
-                  : const Color(0xFF1685B5),
+                  ? const Color(0xFF966236)
+                  : const Color(0xFF3875A1),
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
             ),
           ),
         ],

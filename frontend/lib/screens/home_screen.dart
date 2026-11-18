@@ -563,7 +563,7 @@ class _HomeAppointmentsSectionState extends State<_HomeAppointmentsSection> {
           .showSnackBar(const SnackBar(content: Text('약속 ID를 확인할 수 없어요.')));
       return;
     }
-    Navigator.pushNamed(context, '/appointment-waiting', arguments: id);
+    Navigator.pushNamed(context, '/appointment-detail', arguments: id);
   }
 
   Widget _activeCard(Map<String, dynamic> item) {

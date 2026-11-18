@@ -492,10 +492,19 @@ class _AppointmentWaitingScreenState extends State<AppointmentWaitingScreen> {
                         ),
                         TextButton(
                           onPressed: () {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('약속 상세 화면은 다음 단계에서 연결합니다.'),
-                              ),
+                            final id = _appointmentId;
+                            if (id == null) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('약속 정보를 확인할 수 없어요.'),
+                                ),
+                              );
+                              return;
+                            }
+                            Navigator.pushNamed(
+                              context,
+                              '/appointment-detail',
+                              arguments: id,
                             );
                           },
                           child: const Text(
