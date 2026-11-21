@@ -237,6 +237,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
   Future<void> _connectRealtime(int appointmentId, int participantId) async {
     if (_socketStarted) return;
     _socketStarted = true;
+    _activeAppointmentId = appointmentId;
     unawaited(_loadAppointmentDetail(appointmentId));
 
     try {
@@ -300,6 +301,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
 
         if (arrivedId == myParticipantId) {
           _myArrivalConfirmed = true;
+          _hiddenArrivalCheckingAppointments.add(appointmentId);
           _locationTrackingService.stop();
           debugPrint('ETA 체크인: 본인 도착 확정, GPS 수집 중단');
         }
@@ -371,6 +373,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
   // 서버 체크인 결과를 최신 피그마 도착 화면에 연결
   final Set<String> _shownArrivalEvents = {};
   Map<String, dynamic>? _cachedAppointmentDetail;
+  int? _activeAppointmentId;
 
   Future<void> _loadAppointmentDetail(int appointmentId) async {
     try {
@@ -489,13 +492,23 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
 
   // S-51: 도착 확인 중 화면 표시
   bool _checkingScreenOpen = false;
+  static final Set<int> _hiddenArrivalCheckingAppointments = <int>{};
+  bool _checkingDismissed = false;
   MaterialPageRoute<void>? _checkingRoute;
   final ValueNotifier<ArrivalCheckinStatus> _checkingStatus = ValueNotifier(
     ArrivalCheckinStatus.checking,
   );
 
   void _maybeShowArrivalChecking(LocationSample sample) {
-    if (!mounted || _myArrivalConfirmed || _checkingScreenOpen) return;
+    if (!mounted ||
+        _myArrivalConfirmed ||
+        _checkingScreenOpen ||
+        _checkingDismissed) {
+      return;
+    }
+    if (_hiddenArrivalCheckingAppointments.contains(_activeAppointmentId)) {
+      return;
+    }
     if (!_socketService.isConnected) return;
 
     final distance = _distanceToMeetingPlace(sample);
@@ -528,6 +541,14 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
             nickname: _myNickname,
             placeName: placeName,
             meetAt: meetAt,
+            onReturnToMap: () {
+              _checkingDismissed = true;
+              final appointmentId = _activeAppointmentId;
+              if (appointmentId != null) {
+                _hiddenArrivalCheckingAppointments.add(appointmentId);
+              }
+              Navigator.of(context).pop();
+            },
           ),
         ),
       );
