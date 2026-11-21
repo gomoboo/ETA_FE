@@ -251,6 +251,8 @@ class _AppointmentResultScreenState extends State<AppointmentResultScreen> {
     final lateMinutes = (participant['lateMinutes'] as num?)?.toInt() ?? 0;
     final fineAmount = (participant['fineAmount'] as num?)?.toInt() ?? 0;
     final isLate = status == 'LATE';
+    final isPenaltyTarget =
+        isLate || (status == 'NOT_ARRIVED' && lateMinutes > 0);
     final participantId = (participant['participantId'] as num?)?.toInt();
     final nickname = participantId != null && participantId == myParticipantId
         ? '나'
@@ -263,7 +265,7 @@ class _AppointmentResultScreenState extends State<AppointmentResultScreen> {
     };
     final detail = switch (mode) {
       'FEE' => isLate ? '$lateMinutes분 · ${_money(fineAmount)}원' : '0원',
-      'PENALTY' => isLate ? '$lateMinutes분 · 벌칙 대상' : '벌칙 없음',
+      'PENALTY' => isPenaltyTarget ? '$lateMinutes분 · 벌칙 대상' : '벌칙 없음',
       _ =>
         isLate
             ? '$lateMinutes분 늦음'
