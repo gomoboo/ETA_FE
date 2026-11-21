@@ -137,18 +137,51 @@ class FriendInviteScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: background,
-      appBar: AppBar(
-        backgroundColor: background,
-        foregroundColor: navy,
-        elevation: 0,
-        title: const Text(
-          '친구 초대',
-          style: TextStyle(fontSize: 19, fontWeight: FontWeight.w700),
+      appBar: PreferredSize(
+        preferredSize: const Size.fromHeight(94),
+        child: ColoredBox(
+          color: background,
+          child: SafeArea(
+            bottom: false,
+            child: SizedBox(
+              height: 94,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 24, 0),
+                child: Row(
+                  children: [
+                    SizedBox.square(
+                      dimension: 48,
+                      child: IconButton(
+                        tooltip: '뒤로',
+                        padding: EdgeInsets.zero,
+                        onPressed: () => Navigator.of(context).maybePop(),
+                        icon: const Icon(
+                          Icons.arrow_back_ios_new_rounded,
+                          size: 20,
+                          color: Color(0xFF1685B5),
+                        ),
+                      ),
+                    ),
+                    const Expanded(
+                      child: Text(
+                        '친구 초대',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF18354A),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
         ),
       ),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
+          padding: const EdgeInsets.fromLTRB(24, 2, 24, 32),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -187,12 +220,20 @@ class FriendInviteScreen extends StatelessWidget {
                     const SizedBox(height: 10),
                     Text(
                       meetingText,
-                      style: const TextStyle(fontSize: 13, color: gray),
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: Color(0xFF607280),
+                      ),
                     ),
                     const SizedBox(height: 10),
                     Text(
                       placeText,
-                      style: const TextStyle(fontSize: 13, color: gray),
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: Color(0xFF607280),
+                      ),
                     ),
                     const SizedBox(height: 16),
                     Text(
@@ -254,7 +295,7 @@ class FriendInviteScreen extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 18),
               Builder(
                 builder: (buttonContext) {
                   return SizedBox(

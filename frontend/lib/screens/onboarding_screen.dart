@@ -852,31 +852,35 @@ class _ThirdOnboardingScreenState extends State<ThirdOnboardingScreen> {
                 // 상단
                 SizedBox(
                   height: 32,
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: IconButton(
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
-                          onPressed: () => Navigator.of(context).pop(),
-                          icon: const Icon(
-                            Icons.arrow_back_ios_new_rounded,
-                            size: 20,
-                            color: Color(0xFF17364A),
+                  child: Transform.translate(
+                    offset: const Offset(-8, 0),
+                    child: Row(
+                      children: [
+                        SizedBox.square(
+                          dimension: 48,
+                          child: IconButton(
+                            tooltip: '뒤로',
+                            padding: EdgeInsets.zero,
+                            onPressed: () => Navigator.of(context).pop(),
+                            icon: const Icon(
+                              Icons.arrow_back_ios_new_rounded,
+                              size: 20,
+                              color: Color(0xFF1685B5),
+                            ),
                           ),
                         ),
-                      ),
-                      const Text(
-                        '위치 정보 이용 안내',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFF17364A),
+                        const Expanded(
+                          child: Text(
+                            '위치 정보 이용 안내',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF18354A),
+                            ),
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
 

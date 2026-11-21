@@ -269,13 +269,14 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
   // GPS 10초 주기 수집
   // ===============================================================
 
-  Future<void> _connectRealtime(int appointmentId, int participantId) async {
-    if (_socketStarted) return;
-    _socketStarted = true;
-    unawaited(_loadAppointmentDetail(appointmentId));
+    Future<void> _connectRealtime(int appointmentId, int participantId) async {
+      if (_socketStarted) return;
+      _socketStarted = true;
+      _activeAppointmentId = appointmentId;
+      unawaited(_loadAppointmentDetail(appointmentId));
 
-    try {
-      final guestUuid = await GuestIdentityService.getOrCreateUuid();
+      try {
+        final guestUuid = await GuestIdentityService.getOrCreateUuid();
 
       if (!mounted) return;
 
@@ -287,10 +288,6 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
           debugPrint('ETA WebSocket: 레이더 연결 성공');
           if (mounted && _checkingScreenOpen && !_myArrivalConfirmed) {
             _checkingStatus.value = ArrivalCheckinStatus.checking;
-          }
-          if (mounted) {
-            ScaffoldMessenger.of(context)
-                .showSnackBar(const SnackBar(content: Text('실시간 서버 연결 성공')));
           }
         },
         onMessage: (message) {
@@ -329,12 +326,32 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
       final decoded = jsonDecode(message);
       if (decoded is! Map<String, dynamic>) return;
 
+      if (decoded['type'] == 'poke:received') {
+        _pokeDialogQueue = _pokeDialogQueue
+            .then((_) => _showReceivedPoke(decoded))
+            .catchError((Object error) {
+              debugPrint('찌르기 알림 표시 실패: $error');
+            });
+        return;
+      }
+
+      if (decoded['type'] == 'error' && decoded['code'] == 'POKE_COOLDOWN') {
+        final message = decoded['message']?.toString().trim();
+        _radarNotice(
+          message == null || message.isEmpty
+              ? '잠시 후에 같은 친구에게 다시 찌를 수 있어요.'
+              : message,
+        );
+        return;
+      }
+
       if (decoded['type'] == 'checkin:completed') {
         final arrivedId = decoded['participantId'];
         if (arrivedId is! int) return;
 
         if (arrivedId == myParticipantId) {
           _myArrivalConfirmed = true;
+          _hiddenArrivalCheckingAppointments.add(appointmentId);
           _locationTrackingService.stop();
           debugPrint('ETA 체크인: 본인 도착 확정, GPS 수집 중단');
         }
@@ -425,6 +442,10 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
               movement == 'LATE',
         );
       }
+
+      if (mounted && !_hasReceivedMapSync) {
+        setState(() => _hasReceivedMapSync = true);
+      }
     } catch (error) {
       debugPrint('ETA WebSocket 메시지 처리 실패: $error');
     }
@@ -433,10 +454,11 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
   // 서버 체크인 결과를 최신 피그마 도착 화면에 연결
   final Set<String> _shownArrivalEvents = {};
   Map<String, dynamic>? _cachedAppointmentDetail;
-  Map<String, dynamic>? _cachedAppointmentDetail;
-  int? _activeAppointmentId;
 
   Timer? _appointmentClockTimer;
+  bool _isMapReady = false;
+  bool _hasReceivedMapSync = false;
+  static const _radarLoadingColor = Color(0xFFE6F5FB);
 
   String get _radarAppointmentTitle {
     final title = _cachedAppointmentDetail?['title']?.toString().trim();
@@ -517,7 +539,10 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
                 decoration: BoxDecoration(
                   color: Colors.white,
                   shape: BoxShape.circle,
-                  border: Border.all(color: const Color(0xFF1179AB), width: 3),
+                  border: Border.all(
+                    color: const Color(0xFF1179AB),
+                    width: _radarMarkerBorderWidth,
+                  ),
                   boxShadow: [
                     BoxShadow(
                       color: Colors.black.withValues(alpha: 0.13),
@@ -571,7 +596,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
       await controller.labelLayer.addPoi(
         position,
         id: 'eta-appointment-place',
-        style: PoiStyle(anchor: const KPoint(0.5, 0.20), icon: icon),
+        style: PoiStyle(anchor: const KPoint(0.5, 0.18), icon: icon),
       );
 
       _appointmentPlaceMarkerAdded = true;
@@ -600,6 +625,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
       setState(() {
         _cachedAppointmentDetail = detail;
       });
+
       debugPrint('ETA 체크인: 약속 상세 정보 미리 저장 완료');
       await _renderAppointmentPlaceMarker();
 
@@ -711,13 +737,23 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
 
   // S-51: 도착 확인 중 화면 표시
   bool _checkingScreenOpen = false;
+  static final Set<int> _hiddenArrivalCheckingAppointments = <int>{};
+  bool _checkingDismissed = false;
   MaterialPageRoute<void>? _checkingRoute;
   final ValueNotifier<ArrivalCheckinStatus> _checkingStatus = ValueNotifier(
     ArrivalCheckinStatus.checking,
   );
 
   void _maybeShowArrivalChecking(LocationSample sample) {
-    if (!mounted || _myArrivalConfirmed || _checkingScreenOpen) return;
+    if (!mounted ||
+        _myArrivalConfirmed ||
+        _checkingScreenOpen ||
+        _checkingDismissed) {
+      return;
+    }
+    if (_hiddenArrivalCheckingAppointments.contains(_activeAppointmentId)) {
+      return;
+    }
     if (!_socketService.isConnected) return;
 
     final distance = _distanceToMeetingPlace(sample);
@@ -750,6 +786,14 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
             nickname: _myNickname,
             placeName: placeName,
             meetAt: meetAt,
+            onReturnToMap: () {
+              _checkingDismissed = true;
+              final appointmentId = _activeAppointmentId;
+              if (appointmentId != null) {
+                _hiddenArrivalCheckingAppointments.add(appointmentId);
+              }
+              Navigator.of(context).pop();
+            },
           ),
         ),
       );
@@ -767,6 +811,48 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
     });
   }
 
+  Widget _friendLoadingBar(double width) {
+    return Container(
+      width: width,
+      height: 9,
+      decoration: BoxDecoration(
+        color: _radarLoadingColor,
+        borderRadius: BorderRadius.circular(8),
+      ),
+    );
+  }
+
+  Widget _friendLoadingRow() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+      child: SizedBox(
+        height: _FriendStatusRow.rowHeight,
+        child: Row(
+          children: [
+            const CircleAvatar(
+              radius: 20,
+              backgroundColor: _radarLoadingColor,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _friendLoadingBar(46),
+                  const SizedBox(height: 7),
+                  _friendLoadingBar(78),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            _friendLoadingBar(44),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _radarNotice(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
@@ -775,35 +861,20 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
 
   Future<void> _openSettlementFromRadar() async {
     final id = _activeAppointmentId;
-
     if (id == null) {
       _radarNotice('약속 정보를 확인할 수 없어요.');
       return;
     }
+    if (!mounted) return;
 
-    try {
-      final settlement = await EtaApiService.getSettlement(id);
-      if (!mounted) return;
-
-      final participants = settlement['participants'];
-      if (participants is! List || participants.isEmpty) {
-        _radarNotice('아직 정산 결과가 준비되지 않았어요.');
-        return;
-      }
-
-      await Navigator.of(context).push<void>(
-        MaterialPageRoute(
-          builder: (_) => AppointmentResultScreen(appointmentId: id),
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => AppointmentResultScreen(
+          appointmentId: id,
+          fromRadar: true,
         ),
-      );
-    } catch (error) {
-      debugPrint('레이더 정산 화면 이동 실패: $error');
-      if (error.toString().contains('아직 정산할 수 없는 약속')) {
-        _radarNotice('약속이 종료되면 정산을 확인할 수 있어요.');
-      } else {
-        _radarNotice('정산 정보를 확인하지 못했어요.');
-      }
-    }
+      ),
+    );
   }
 
   Future<void> _startLocationTracking() async {
@@ -930,6 +1001,356 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
 
       _friendPois[friend.id] = poi;
     }
+  }
+
+  static final Map<(int, int), DateTime> _pokeCooldownUntil = {};
+
+  List<({int id, FriendRadarData friend})> _pokeTargets() {
+    final targets = <({int id, FriendRadarData friend})>[];
+    const prefix = 'participant-';
+
+    for (final friend in _friends) {
+      if (!friend.id.startsWith(prefix) || friend.status == '도착 완료') {
+        continue;
+      }
+      final id = int.tryParse(friend.id.substring(prefix.length));
+      if (id != null) targets.add((id: id, friend: friend));
+    }
+
+    targets.sort((a, b) {
+      final aPriority = a.friend.status == '미출발 의심' ? 0 : 1;
+      final bPriority = b.friend.status == '미출발 의심' ? 0 : 1;
+      final priority = aPriority.compareTo(bPriority);
+      return priority == 0 ? a.friend.name.compareTo(b.friend.name) : priority;
+    });
+    return targets;
+  }
+
+  bool _canPoke(int appointmentId, int participantId) {
+    final until = _pokeCooldownUntil[(appointmentId, participantId)];
+    return until == null || !DateTime.now().isBefore(until);
+  }
+
+  Future<void> _openPokeSelection() async {
+    final appointmentId = _activeAppointmentId;
+    if (appointmentId == null || !_socketService.isConnected) {
+      _radarNotice('실시간 연결을 확인해 주세요.');
+      return;
+    }
+
+    final targets = _pokeTargets();
+    if (targets.isEmpty) {
+      _radarNotice('지금 찌를 수 있는 친구가 없어요.');
+      return;
+    }
+
+    if (targets.length == 1) {
+      final target = targets.single;
+      if (!_canPoke(appointmentId, target.id)) {
+        _radarNotice('잠시 후에 같은 친구에게 다시 찌를 수 있어요.');
+        return;
+      }
+
+      final confirmed = await _confirmPoke(target.friend.name);
+      if (confirmed == true) _sendPokes(appointmentId, [target.id]);
+      return;
+    }
+
+    final selected = <int>{};
+    final clock = Stream<int>.periodic(
+      const Duration(seconds: 1),
+      (tick) => tick,
+    );
+
+    final selectedIds = await showModalBottomSheet<List<int>>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      backgroundColor: Colors.white,
+      builder: (sheetContext) {
+        return SafeArea(
+          top: false,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.sizeOf(sheetContext).height * 0.7,
+            ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+              child: StatefulBuilder(
+                builder: (context, updateSheet) => StreamBuilder<int>(
+                  stream: clock,
+                  builder: (context, _) => Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text(
+                        '침대 탈출 찌르기',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Flexible(
+                        child: ListView(
+                          shrinkWrap: true,
+                          children: [
+                            for (final target in targets)
+                              CheckboxListTile(
+                                contentPadding: EdgeInsets.zero,
+                                title: Text(target.friend.name),
+                                subtitle: Text(
+                                  _canPoke(appointmentId, target.id)
+                                      ? target.friend.status
+                                      : '잠시 후 다시 가능',
+                                ),
+                                value: selected.contains(target.id),
+                                onChanged: _canPoke(appointmentId, target.id)
+                                    ? (checked) => updateSheet(() {
+                                        if (checked == true) {
+                                          selected.add(target.id);
+                                        } else {
+                                          selected.remove(target.id);
+                                        }
+                                      })
+                                    : null,
+                              ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      ElevatedButton(
+                        onPressed: selected.isEmpty
+                            ? null
+                            : () => Navigator.of(sheetContext).pop(
+                                selected.toList(),
+                              ),
+                        child: Text(
+                          selected.isEmpty ? '찌르기' : '${selected.length}명 찌르기',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+
+    if (selectedIds != null) _sendPokes(appointmentId, selectedIds);
+  }
+
+  void _sendPokes(int appointmentId, List<int> selectedIds) {
+    if (!mounted) return;
+    if (!_socketService.isConnected) {
+      _radarNotice('연결이 끊겼어요. 다시 시도해 주세요.');
+      return;
+    }
+
+    final eligibleIds = _pokeTargets().map((target) => target.id).toSet();
+    var sent = 0;
+    for (final id in selectedIds) {
+      if (!eligibleIds.contains(id) || !_canPoke(appointmentId, id)) continue;
+
+      _socketService.send({
+        'type': 'poke:send',
+        'targetParticipantId': id,
+      });
+      _pokeCooldownUntil[(appointmentId, id)] =
+          DateTime.now().add(const Duration(seconds: 60));
+      sent++;
+    }
+
+    _radarNotice(
+      sent == 0
+          ? '지금 찌를 수 있는 대상이 없어요.'
+          : '$sent명에게 찌르기 요청을 보냈어요.',
+    );
+  }
+
+  Future<bool?> _confirmPoke(String nickname) {
+    return showDialog<bool>(
+      context: context,
+      barrierColor: const Color(0x660D2535),
+      builder: (dialogContext) => Dialog(
+        backgroundColor: Colors.white,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24),
+        ),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(24, 20, 24, 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Center(
+                child: CircleAvatar(
+                  radius: 27,
+                  backgroundColor: Color(0xFFE6F5FB),
+                  child: Icon(Icons.bolt_rounded, color: Color(0xFFFFB000)),
+                ),
+              ),
+              const SizedBox(height: 18),
+              Text(
+                '$nickname에게 찌르기를 보낼까요?',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: _navy,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 18),
+              SizedBox(
+                height: 48,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(true),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF14779D),
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                  child: const Text(
+                    '찌르기 보내기',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: const Text('닫기', style: TextStyle(color: _gray)),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pokeDialogQueue = Future<void>.value();
+
+  Future<void> _showReceivedPoke(Map<String, dynamic> message) async {
+    final pokeId = message['pokeId'];
+    if (!mounted || pokeId is! int) return;
+
+    final name = message['senderNickname']?.toString().trim();
+    final sender = name == null || name.isEmpty ? '친구' : name;
+    final title = message['appointmentTitle']?.toString().trim();
+    final minutes = message['remainingMinutesToMeet'];
+    final meters = message['remainingDistanceMeter'];
+    final details = [
+      if (minutes is num) '약속까지 ${minutes.toInt()}분',
+      if (meters is num)
+        meters >= 1000
+            ? '${(meters / 1000).toStringAsFixed(1)}km 남음'
+            : '${meters.round()}m 남음',
+    ].join(' · ');
+
+    final action = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: const Color(0x660D2535),
+      builder: (dialogContext) => Dialog(
+        backgroundColor: Colors.white,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24),
+        ),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(24, 24, 24, 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Center(
+                child: CircleAvatar(
+                  radius: 27,
+                  backgroundColor: Color(0xFFE6F5FB),
+                  child: Icon(Icons.bolt_rounded, color: Color(0xFFFFB000)),
+                ),
+              ),
+              const SizedBox(height: 18),
+              Text(
+                '$sender님이 찌르기를 보냈어요!',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: _navy,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: _background,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title == null || title.isEmpty ? '약속' : title,
+                      style: const TextStyle(
+                        color: _navy,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    if (details.isNotEmpty) ...[
+                      const SizedBox(height: 5),
+                      Text(details, style: const TextStyle(color: _gray)),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                height: 48,
+                child: ElevatedButton(
+                  onPressed: () =>
+                      Navigator.of(dialogContext).pop('NOW_DEPARTING'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF14779D),
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                  child: const Text(
+                    '지금 출발해요',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop('DISMISSED'),
+                child: const Text('닫기', style: TextStyle(color: _gray)),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (!mounted || action == null) return;
+    if (!_socketService.isConnected) {
+      _radarNotice('연결이 끊겨 찌르기 응답을 보내지 못했어요.');
+      return;
+    }
+
+    _socketService.send({
+      'type': 'poke:respond',
+      'pokeId': pokeId,
+      'action': action,
+    });
   }
 
   Future<void> _updateFriendData({
@@ -1127,7 +1548,10 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
     );
     final hasMeetingTimePassed =
         meetAt != null && !DateTime.now().isBefore(meetAt);
-    final mapOffset = hasMeetingTimePassed ? 0.0 : _collapsedHeight / 2;
+    final showFriendSheet = meetAt != null && !hasMeetingTimePassed;
+    final isLoadingRadar =
+        !_isMapReady || (showFriendSheet && !_hasReceivedMapSync);
+    final mapOffset = showFriendSheet ? _collapsedHeight / 2 : 0.0;
 
     return Scaffold(
       backgroundColor: _background,
@@ -1153,7 +1577,11 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
                         mapType: MapType.normal,
                       ),
                       onMapReady: (KakaoMapController controller) async {
+                        if (!mounted) return;
                         _mapController = controller;
+                        if (!_isMapReady) {
+                          setState(() => _isMapReady = true);
+                        }
                         _appointmentPlaceMarkerAdded = false;
                         await _renderAppointmentPlaceMarker();
 
@@ -1172,6 +1600,30 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
                 ),
               ),
             ),
+
+            if (!_isMapReady)
+              Positioned.fill(
+                top: headerBottom,
+                bottom: showFriendSheet ? _sheetHeight : 0,
+                child: const AbsorbPointer(
+                  child: ColoredBox(
+                    color: _radarLoadingColor,
+                    child: Center(
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text('•••', style: TextStyle(color: _blue)),
+                          SizedBox(width: 8),
+                          Text(
+                            '지도를 불러오는 중이에요',
+                            style: TextStyle(fontSize: 13, color: _blue),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
 
             // =========================================================
             // 상단 헤더
@@ -1216,12 +1668,14 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
                           ),
                           SizedBox(height: 4),
                           Text(
-                            hasMeetingTimePassed
+                            isLoadingRadar
+                                ? '위치 정보를 불러오는 중'
+                                : hasMeetingTimePassed
                                 ? '약속 시간이 지났어요 · 위치 공유 중'
                                 : '${_radarTimeLabel()} · 위치 공유 중',
                             style: TextStyle(
                               fontSize: 12,
-                              color: hasMeetingTimePassed
+                              color: hasMeetingTimePassed && !isLoadingRadar
                                   ? const Color(0xFFA23030)
                                   : _blue,
                             ),
@@ -1246,7 +1700,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
               ),
             ),
 
-            if (!hasMeetingTimePassed)
+            if (showFriendSheet && !isLoadingRadar)
               AnimatedPositioned(
                 duration: _isDragging
                     ? Duration.zero
@@ -1261,12 +1715,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
                     color: Colors.transparent,
                     child: InkWell(
                       borderRadius: BorderRadius.circular(16),
-                      onTap: () {
-                        debugPrint('찌르기 버튼 클릭');
-
-                        // TODO:
-                        // 나중에 poke:send 연결
-                      },
+                      onTap: _openPokeSelection,
                       child: Container(
                         width: 67,
                         height: _pokeButtonHeight,
@@ -1310,7 +1759,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
             // =========================================================
             // 친구 상태 바텀시트
             // =========================================================
-            if (!hasMeetingTimePassed)
+            if (showFriendSheet)
               AnimatedPositioned(
                 duration: _isDragging
                     ? Duration.zero
@@ -1380,9 +1829,9 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
                                 ),
                               ),
 
-                              const Row(
+                              Row(
                                 children: [
-                                  Text(
+                                  const Text(
                                     '친구들은 오는 중',
                                     style: TextStyle(
                                       fontSize: 20,
@@ -1390,10 +1839,12 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
                                       color: _navy,
                                     ),
                                   ),
-                                  SizedBox(width: 8),
+                                  const SizedBox(width: 8),
                                   Text(
-                                    '방금 업데이트',
-                                    style: TextStyle(
+                                    _hasReceivedMapSync
+                                        ? '방금 업데이트'
+                                        : '위치 확인 중',
+                                    style: const TextStyle(
                                       fontSize: 12,
                                       color: _gray,
                                     ),
@@ -1406,10 +1857,15 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
                                 child: ListView.builder(
                                   padding: EdgeInsets.zero,
                                   physics: const ClampingScrollPhysics(),
-                                  itemCount: _sheetProgress == 0
+                                  itemCount: !_hasReceivedMapSync
+                                      ? 3
+                                      : _sheetProgress == 0
                                       ? _collapsedFriendCount
                                       : _friends.length,
                                   itemBuilder: (context, index) {
+                                    if (!_hasReceivedMapSync) {
+                                      return _friendLoadingRow();
+                                    }
                                     final friend = _friends[index];
 
                                     return Padding(

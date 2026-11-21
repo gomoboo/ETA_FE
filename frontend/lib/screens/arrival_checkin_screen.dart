@@ -10,6 +10,7 @@ class ArrivalCheckinScreen extends StatelessWidget {
     required this.placeName,
     required this.meetAt,
     this.arrivedAt,
+    this.onReturnToMap,
     this.finalLateMinutes,
     this.allArrived = false,
   });
@@ -19,6 +20,7 @@ class ArrivalCheckinScreen extends StatelessWidget {
   final String placeName;
   final DateTime meetAt;
   final DateTime? arrivedAt;
+  final VoidCallback? onReturnToMap;
   final int? finalLateMinutes;
   final bool allArrived;
 
@@ -255,7 +257,7 @@ class ArrivalCheckinScreen extends StatelessWidget {
                 width: double.infinity,
                 height: 56,
                 child: ElevatedButton(
-                  onPressed: () => Navigator.of(context).pop(),
+                  onPressed: onReturnToMap ?? () => Navigator.of(context).pop(),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: _blue,
                     foregroundColor: _navy,

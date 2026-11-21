@@ -1233,7 +1233,7 @@ class _AppointmentCreateScreenState extends State<AppointmentCreateScreen> {
     final result = await showCupertinoModalPopup<_WheelTimeResult>(
       context: context,
       builder: (popupContext) {
-        return Container(
+        final sheet = Container(
           height: 300,
           decoration: const BoxDecoration(
             color: Colors.white,
@@ -1404,6 +1404,7 @@ class _AppointmentCreateScreenState extends State<AppointmentCreateScreen> {
             ),
           ),
         );
+        return Material(type: MaterialType.transparency, child: sheet);
       },
     );
 

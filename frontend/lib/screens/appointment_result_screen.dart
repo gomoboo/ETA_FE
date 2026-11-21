@@ -6,9 +6,14 @@ import 'appointment_warrant_screen.dart';
 /// 피그마 S-53~55 / UI 설계서 S-56~58 지각 정산 화면.
 /// 정산 상태: 설계서 S-59(로딩), S-60(미정산), S-61(전원 도착), S-62(오류).
 class AppointmentResultScreen extends StatefulWidget {
-  const AppointmentResultScreen({super.key, required this.appointmentId});
+  const AppointmentResultScreen({
+    super.key,
+    required this.appointmentId,
+    this.fromRadar = false,
+  });
 
   final int appointmentId;
+  final bool fromRadar;
 
   @override
   State<AppointmentResultScreen> createState() =>
@@ -482,6 +487,78 @@ class _AppointmentResultScreenState extends State<AppointmentResultScreen> {
     }
   }
 
+  bool _isSettlementNotReady(Object? error) {
+    final message = error?.toString() ?? '';
+    return message.contains('SETTLEMENT_NOT_READY') ||
+        message.contains('아직 정산할 수 없는 약속');
+  }
+
+  Widget _settlementStatusCard({
+    required IconData icon,
+    required String title,
+    required String description,
+    required String buttonLabel,
+    required VoidCallback onPressed,
+  }) {
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.fromLTRB(18, 24, 18, 24),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(22),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 58,
+                height: 58,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: _pale,
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: Icon(icon, color: _accent, size: 26),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: _navy,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                description,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: _gray, fontSize: 13, height: 1.5),
+              ),
+              const SizedBox(height: 16),
+              _primaryButton(buttonLabel, onPressed),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _radarSettlementPending() {
+    return _settlementStatusCard(
+      icon: Icons.remove,
+      title: '아직 정산할 수 없어요',
+      description: '참가자의 도착 기록이 생기면\n'
+          '이곳에서 지각 정산을 시작할 수 있어요.',
+      buttonLabel: '실시간 레이더 보기',
+      onPressed: () => Navigator.of(context).maybePop(),
+    );
+  }
+
   Widget _settledView(_SettlementViewData data) {
     final settlement = data.settlement;
     final rawParticipants = settlement?['participants'];
@@ -490,6 +567,8 @@ class _AppointmentResultScreenState extends State<AppointmentResultScreen> {
         : <Map>[];
 
     if (participants.isEmpty) {
+      if (widget.fromRadar) return _radarSettlementPending();
+
       return _stateMessage(
         icon: Icons.hourglass_empty,
         title: '아직 정산할 수 없어요',
@@ -507,13 +586,14 @@ class _AppointmentResultScreenState extends State<AppointmentResultScreen> {
     });
 
     if (allArrivedOnTime) {
-      return _stateMessage(
-        icon: Icons.check_circle_outline,
+      return _settlementStatusCard(
+        icon: Icons.check_rounded,
         title: '전원 무사 도착!',
-        description: '지각한 사람이 없어서\n정산할 내용이 없어요.',
-        primaryLabel: '홈으로 가기',
-        onPrimary: _goToAppointmentList,
-        iconColor: _accent,
+        description: '지각한 사람이 없어서 정산할 내용이 없어요.',
+        buttonLabel: '홈으로 가기',
+        onPressed: () {
+          Navigator.of(context).pushNamedAndRemoveUntil('/', (_) => false);
+        },
       );
     }
 
@@ -564,19 +644,24 @@ class _AppointmentResultScreenState extends State<AppointmentResultScreen> {
                     if (snapshot.connectionState != ConnectionState.done) {
                       return _loadingState();
                     }
-                    if (snapshot.hasError || !snapshot.hasData) {
-                      return _stateMessage(
-                        icon: Icons.error_outline,
-                        title: '지각 정산을 불러오지 못했어요',
-                        description: '네트워크 연결 또는 약속 종료 상태를\n확인하고 다시 시도해 주세요.',
-                        primaryLabel: '다시 시도',
-                        onPrimary: _retry,
-                        secondaryLabel: '약속 목록으로',
-                        onSecondary: _goToAppointmentList,
-                      );
-                    }
-                    final data = snapshot.requireData;
+                    if (widget.fromRadar && _isSettlementNotReady(snapshot.error)) {
+              return _radarSettlementPending();
+            }
+
+            if (snapshot.hasError || !snapshot.hasData) {
+              return _settlementStatusCard(
+                icon: Icons.priority_high_rounded,
+                title: '지각 정산 결과를 불러오지 못했어요',
+                description: '네트워크 연결 문제로 도착 기록을\n'
+                    '불러오지 못했어요. 연결 후 다시 시도해 주세요.',
+                buttonLabel: '다시 시도',
+                onPressed: _retry,
+              );
+            }
+
+            final data = snapshot.requireData;
                     if (data.upcoming) {
+              if (widget.fromRadar) return _radarSettlementPending();
                       final date = DateTime.tryParse(
                         data.appointment['meetAt']?.toString() ?? '',
                       )?.toLocal();

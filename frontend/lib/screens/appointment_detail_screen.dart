@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../services/eta_api_service.dart';
@@ -242,10 +244,14 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
         ? rawParticipants.whereType<Map>().toList()
         : <Map>[];
 
-    final names = participants
-        .map((p) => p['nickname']?.toString() ?? '참가자')
-        .join(' · ');
-
+    final myParticipantId = detail['myParticipantId']?.toString();
+    final names = participants.map((participant) {
+      if (myParticipantId != null &&
+          participant['participantId']?.toString() == myParticipantId) {
+        return '나';
+      }
+      return participant['nickname']?.toString() ?? '참가자';
+    }).join(' · ');
     String locationDescription = '위치 공유 시작 시간 확인 필요';
 
     if (date != null && radarStart != null) {
@@ -261,21 +267,10 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          detail['title']?.toString() ?? '약속',
-          style: const TextStyle(
-            fontSize: 26,
-            fontWeight: FontWeight.w700,
-            color: navy,
-          ),
-        ),
-
-        const SizedBox(height: 22),
-
         // 만나는 날짜 · 시간 · 장소
         Container(
           width: double.infinity,
-          padding: const EdgeInsets.fromLTRB(24, 24, 24, 28),
+          padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(24),
@@ -290,31 +285,35 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
 
               const SizedBox(height: 16),
 
-              Text(
-                dateText(date),
-                style: const TextStyle(
-                  fontSize: 26,
-                  fontWeight: FontWeight.w700,
-                  color: navy,
-                ),
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  Text(
+                    dateText(date),
+                    style: const TextStyle(
+                      fontSize: 21,
+                      fontWeight: FontWeight.w700,
+                      color: navy,
+                    ),
+                  ),
+                  Text(
+                    timeText(date),
+                    style: const TextStyle(
+                      fontSize: 21,
+                      fontWeight: FontWeight.w700,
+                      color: accent,
+                    ),
+                  ),
+                ],
               ),
 
-              const SizedBox(height: 10),
-
-              Text(
-                timeText(date),
-                style: const TextStyle(
-                  fontSize: 30,
-                  fontWeight: FontWeight.w700,
-                  color: accent,
-                ),
-              ),
-
-              const SizedBox(height: 24),
+              const SizedBox(height: 14),
 
               const Divider(height: 1, thickness: 1, color: Color(0xFFE1F0F8)),
 
-              const SizedBox(height: 24),
+              const SizedBox(height: 14),
 
               const Text('만나는 장소', style: TextStyle(fontSize: 13, color: gray)),
 
@@ -337,7 +336,7 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
         // 참가자 및 지각 규칙
         Container(
           width: double.infinity,
-          padding: const EdgeInsets.fromLTRB(22, 22, 22, 24),
+          padding: const EdgeInsets.fromLTRB(22, 14, 22, 14),
           decoration: BoxDecoration(
             color: pale,
             borderRadius: BorderRadius.circular(24),
@@ -347,30 +346,30 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
             children: [
               Text(
                 '참가자 ${participants.length}명',
-                style: const TextStyle(fontSize: 13, color: gray),
+                style: const TextStyle(fontSize: 12, color: gray),
               ),
 
-              const SizedBox(height: 12),
+              const SizedBox(height: 8),
 
               Text(
                 names.isEmpty ? '참가자 정보가 없어요' : names,
                 style: const TextStyle(
-                  fontSize: 16,
+                  fontSize: 15,
                   fontWeight: FontWeight.w700,
                   color: navy,
                 ),
               ),
 
-              const SizedBox(height: 26),
+              const SizedBox(height: 18),
 
-              const Text('지각 규칙', style: TextStyle(fontSize: 13, color: gray)),
+              const Text('지각 규칙', style: TextStyle(fontSize: 12, color: gray)),
 
-              const SizedBox(height: 12),
+              const SizedBox(height: 8),
 
               Text(
                 penaltyText(detail['penalty']),
                 style: const TextStyle(
-                  fontSize: 16,
+                  fontSize: 15,
                   fontWeight: FontWeight.w700,
                   color: accent,
                 ),
@@ -508,14 +507,57 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: background,
-      appBar: AppBar(
-        backgroundColor: background,
-        foregroundColor: navy,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        title: const Text(
-          '약속 상세',
-          style: TextStyle(fontSize: 19, fontWeight: FontWeight.w700),
+      appBar: PreferredSize(
+        preferredSize: const Size.fromHeight(94),
+        child: ColoredBox(
+          color: background,
+          child: SafeArea(
+            bottom: false,
+            child: SizedBox(
+              height: 94,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 24, 0),
+                child: Row(
+                  children: [
+                    SizedBox.square(
+                      dimension: 48,
+                      child: IconButton(
+                        tooltip: '뒤로',
+                        padding: EdgeInsets.zero,
+                        onPressed: () => Navigator.of(context).maybePop(),
+                        icon: const Icon(
+                          Icons.arrow_back_ios_new_rounded,
+                          size: 20,
+                          color: Color(0xFF1685B5),
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: FutureBuilder<Map<String, dynamic>>(
+                        future: detailFuture,
+                        builder: (context, snapshot) => Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              snapshot.data?['title']?.toString() ?? '약속 상세',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF18354A),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
         ),
       ),
       body: SafeArea(
@@ -549,9 +591,31 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
                           );
                         }
 
-                        return SingleChildScrollView(
-                          padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
-                          child: detailContent(snapshot.data ?? {}),
+                        final detail = snapshot.data ?? <String, dynamic>{};
+                        final radarStart = parseDate(detail['radarStartAt']);
+                        final status = (detail['status'] ?? detail['appointmentStatus'])
+                            ?.toString()
+                            .toUpperCase();
+                        final showCountdown =
+                            radarStart != null && status != 'COMPLETED' && status != 'CANCELLED';
+
+                        return Column(
+                          children: [
+                            if (showCountdown)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 6, bottom: 26),
+                                child: _RadarStartCountdown(
+                                  startsAt: radarStart,
+                                  createdAt: parseDate(detail['createdAt']),
+                                ),
+                              ),
+                            Expanded(
+                              child: SingleChildScrollView(
+                                padding: EdgeInsets.fromLTRB(24, showCountdown ? 0 : 4, 24, 24),
+                                child: detailContent(detail),
+                              ),
+                            ),
+                          ],
                         );
                       },
                     ),
@@ -559,6 +623,123 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
             _bottomActionsByStatus(),
           ],
         ),
+      ),
+    );
+  }
+}
+
+
+class _RadarStartCountdown extends StatefulWidget {
+  const _RadarStartCountdown({
+    required this.startsAt,
+    required this.createdAt,
+  });
+
+  final DateTime startsAt;
+  final DateTime? createdAt;
+
+  @override
+  State<_RadarStartCountdown> createState() => _RadarStartCountdownState();
+}
+
+class _RadarStartCountdownState extends State<_RadarStartCountdown> {
+  static const _ring = Color(0xFF14779D);
+  static const _track = Color(0xFFE6F5FB);
+  static const _label = Color(0xFF18354A);
+
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _startTimer();
+  }
+
+  @override
+  void didUpdateWidget(covariant _RadarStartCountdown oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.startsAt != widget.startsAt) _startTimer();
+  }
+
+  void _startTimer() {
+    _timer?.cancel();
+    if (!DateTime.now().isBefore(widget.startsAt)) return;
+
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!DateTime.now().isBefore(widget.startsAt)) timer.cancel();
+      setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final now = DateTime.now();
+    final remaining = widget.startsAt.difference(now).inMilliseconds;
+    final seconds = remaining <= 0 ? 0 : (remaining + 999) ~/ 1000;
+    final hours = (seconds ~/ 3600).toString().padLeft(2, '0');
+    final minutes = (seconds ~/ 60 % 60).toString().padLeft(2, '0');
+    final secs = (seconds % 60).toString().padLeft(2, '0');
+
+    final createdAt = widget.createdAt;
+    final periodStart = createdAt != null && createdAt.isBefore(widget.startsAt)
+        ? createdAt
+        : widget.startsAt.subtract(const Duration(hours: 1));
+    final total = widget.startsAt.difference(periodStart).inMilliseconds;
+    final progress = (1 - remaining / total).clamp(0.0, 1.0).toDouble();
+
+    return SizedBox.square(
+      dimension: 168,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          const DecoratedBox(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+            ),
+          ),
+          CircularProgressIndicator(
+            value: progress,
+            color: _ring,
+            backgroundColor: _track,
+            strokeWidth: 8,
+            strokeCap: StrokeCap.butt,
+            trackGap: 0,
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Text(
+                  '레이더 시작까지',
+                  style: TextStyle(
+                    color: _label,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                FittedBox(
+                  child: Text(
+                    '$hours:$minutes:$secs',
+                    style: const TextStyle(
+                      color: _ring,
+                      fontSize: 32,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

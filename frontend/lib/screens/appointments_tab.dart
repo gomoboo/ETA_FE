@@ -405,7 +405,8 @@ class _AppointmentsTabState extends State<AppointmentsTab> {
         child: InkWell(
           borderRadius: BorderRadius.circular(20),
           onTap: () => openAppointment(item),
-          child: Padding(
+          child: Container(
+            width: double.infinity,
             padding: const EdgeInsets.all(18),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
