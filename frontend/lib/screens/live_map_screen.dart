@@ -433,6 +433,8 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
   // 서버 체크인 결과를 최신 피그마 도착 화면에 연결
   final Set<String> _shownArrivalEvents = {};
   Map<String, dynamic>? _cachedAppointmentDetail;
+  Map<String, dynamic>? _cachedAppointmentDetail;
+  int? _activeAppointmentId;
 
   Timer? _appointmentClockTimer;
 
@@ -461,7 +463,8 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
   bool _appointmentPlaceMarkerAdded = false;
   bool _appointmentPlaceMarkerLoading = false;
 
-  static const double _radarMarkerDiameter = 40;
+  static const double _radarMarkerDiameter = 36;
+  static const double _radarMarkerBorderWidth = 2.5;
 
   Future<void> _renderAppointmentPlaceMarker() async {
     if (_appointmentPlaceMarkerAdded || _appointmentPlaceMarkerLoading) {
@@ -877,7 +880,10 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
         decoration: BoxDecoration(
           color: backgroundColor,
           shape: BoxShape.circle,
-          border: Border.all(color: Colors.white, width: 2),
+          border: Border.all(
+            color: Colors.white,
+            width: _radarMarkerBorderWidth,
+          ),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.15),
@@ -1115,7 +1121,13 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
 
   @override
   Widget build(BuildContext context) {
-    const headerBottom = _radarHeaderHeight - 10;
+    const headerBottom = _radarHeaderHeight - 12;
+    final meetAt = DateTime.tryParse(
+      _cachedAppointmentDetail?['meetAt']?.toString() ?? '',
+    );
+    final hasMeetingTimePassed =
+        meetAt != null && !DateTime.now().isBefore(meetAt);
+    final mapOffset = hasMeetingTimePassed ? 0.0 : _collapsedHeight / 2;
 
     return Scaffold(
       backgroundColor: _background,
@@ -1128,8 +1140,8 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
             // =========================================================
 
             Positioned.fill(
-              top: headerBottom,
-              bottom: _collapsedHeight,
+              top: headerBottom - mapOffset,
+              bottom: mapOffset,
               child: Container(
                 color: const Color(0xFFEBF2F6),
                 child: Stack(
@@ -1171,7 +1183,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
               height: headerBottom,
               child: Container(
                 color: _background,
-                padding: const EdgeInsets.fromLTRB(12, 10, 24, 12),
+                padding: const EdgeInsets.fromLTRB(12, 8, 24, 12),
                 child: Row(
                   children: [
                     SizedBox.square(
@@ -1204,8 +1216,15 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
                           ),
                           SizedBox(height: 4),
                           Text(
-                            '${_radarTimeLabel()} · 위치 공유 중',
-                            style: TextStyle(fontSize: 12, color: _blue),
+                            hasMeetingTimePassed
+                                ? '약속 시간이 지났어요 · 위치 공유 중'
+                                : '${_radarTimeLabel()} · 위치 공유 중',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: hasMeetingTimePassed
+                                  ? const Color(0xFFA23030)
+                                  : _blue,
+                            ),
                           ),
                         ],
                       ),
@@ -1227,198 +1246,203 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
               ),
             ),
 
-            AnimatedPositioned(
-              duration: _isDragging
-                  ? Duration.zero
-                  : const Duration(milliseconds: 220),
-              curve: Curves.easeOut,
-              left: 0,
-              right: 0,
-              bottom: _sheetHeight + _pokeButtonGap,
-              height: _pokeButtonHeight,
-              child: Center(
-                child: Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(16),
-                    onTap: () {
-                      debugPrint('찌르기 버튼 클릭');
+            if (!hasMeetingTimePassed)
+              AnimatedPositioned(
+                duration: _isDragging
+                    ? Duration.zero
+                    : const Duration(milliseconds: 220),
+                curve: Curves.easeOut,
+                left: 0,
+                right: 0,
+                bottom: _sheetHeight + _pokeButtonGap,
+                height: _pokeButtonHeight,
+                child: Center(
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(16),
+                      onTap: () {
+                        debugPrint('찌르기 버튼 클릭');
 
-                      // TODO:
-                      // 나중에 poke:send 연결
-                    },
-                    child: Container(
-                      width: 67,
-                      height: _pokeButtonHeight,
-                      decoration: BoxDecoration(
-                        color: _pokeBackground,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: _pokeBorder, width: 1.5),
-                      ),
-                      child: const Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: Icon(
-                              Icons.bolt_rounded,
-                              size: 16,
-                              color: _pokeBorder,
-                            ),
-                          ),
-                          SizedBox(width: 2),
-                          Text(
-                            '찌르기',
-                            style: TextStyle(
-                              fontFamily: 'Noto Sans KR',
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: _pokeText,
-                              height: 1.5,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-
-            // =========================================================
-            // 친구 상태 바텀시트
-            // =========================================================
-            AnimatedPositioned(
-              duration: _isDragging
-                  ? Duration.zero
-                  : const Duration(milliseconds: 220),
-              curve: Curves.easeOut,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              height: _sheetHeight,
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: const BorderRadius.only(
-                      topLeft: Radius.circular(28),
-                      topRight: Radius.circular(28),
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.12),
-                        blurRadius: 18,
-                        offset: const Offset(0, -4),
-                      ),
-                    ],
-                  ),
-                  child: Stack(
-                    children: [
-                      // =================================================
-                      // 친구 정보
-                      // =================================================
-
-                      Positioned(
-                        top: 16,
-                        left: 24,
-                        right: 24,
-                        bottom: 12,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                        // TODO:
+                        // 나중에 poke:send 연결
+                      },
+                      child: Container(
+                        width: 67,
+                        height: _pokeButtonHeight,
+                        decoration: BoxDecoration(
+                          color: _pokeBackground,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: _pokeBorder, width: 1.5),
+                        ),
+                        child: const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            // 손잡이
-                            GestureDetector(
-                              behavior: HitTestBehavior.opaque,
-                              onVerticalDragStart: _canExpandSheet
-                                  ? _onDragStart
-                                  : null,
-                              onVerticalDragUpdate: _canExpandSheet
-                                  ? _onDragUpdate
-                                  : null,
-                              onVerticalDragEnd: _canExpandSheet
-                                  ? _onDragEnd
-                                  : null,
-                              child: SizedBox(
-                                width: double.infinity,
-                                height: 20,
-                                child: Align(
-                                  alignment: Alignment.topCenter,
-                                  child: Container(
-                                    width: 40,
-                                    height: 4,
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFFB7C4CB),
-                                      borderRadius: BorderRadius.circular(10),
-                                    ),
-                                  ),
-                                ),
+                            SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: Icon(
+                                Icons.bolt_rounded,
+                                size: 16,
+                                color: _pokeBorder,
                               ),
                             ),
-
-                            const Row(
-                              children: [
-                                Text(
-                                  '친구들은 오는 중',
-                                  style: TextStyle(
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.w700,
-                                    color: _navy,
-                                  ),
-                                ),
-                                SizedBox(width: 8),
-                                Text(
-                                  '방금 업데이트',
-                                  style: TextStyle(fontSize: 12, color: _gray),
-                                ),
-                              ],
-                            ),
-
-                            const SizedBox(height: 18),
-                            Expanded(
-                              child: ListView.builder(
-                                padding: EdgeInsets.zero,
-                                physics: const ClampingScrollPhysics(),
-                                itemCount: _sheetProgress == 0
-                                    ? _collapsedFriendCount
-                                    : _friends.length,
-                                itemBuilder: (context, index) {
-                                  final friend = _friends[index];
-
-                                  return Padding(
-                                    padding: EdgeInsets.only(
-                                      left: 8,
-                                      right: 8,
-                                      bottom: index == _friends.length - 1
-                                          ? 0
-                                          : _friendGap,
-                                    ),
-                                    child: _FriendStatusRow(
-                                      initial: friend.initial,
-                                      name: friend.name,
-                                      detail: friend.detail,
-                                      status: friend.status,
-                                      warning: friend.warning,
-                                    ),
-                                  );
-                                },
+                            SizedBox(width: 2),
+                            Text(
+                              '찌르기',
+                              style: TextStyle(
+                                fontFamily: 'Noto Sans KR',
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: _pokeText,
+                                height: 1.5,
                               ),
                             ),
                           ],
                         ),
                       ),
-
-                      // =================================================
-                      // 펼침 상태 버튼
-                      // =================================================
-                    ],
+                    ),
                   ),
                 ),
               ),
-            ),
+
+            // =========================================================
+            // 친구 상태 바텀시트
+            // =========================================================
+            if (!hasMeetingTimePassed)
+              AnimatedPositioned(
+                duration: _isDragging
+                    ? Duration.zero
+                    : const Duration(milliseconds: 220),
+                curve: Curves.easeOut,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                height: _sheetHeight,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: const BorderRadius.only(
+                        topLeft: Radius.circular(28),
+                        topRight: Radius.circular(28),
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.12),
+                          blurRadius: 18,
+                          offset: const Offset(0, -4),
+                        ),
+                      ],
+                    ),
+                    child: Stack(
+                      children: [
+                        // =================================================
+                        // 친구 정보
+                        // =================================================
+
+                        Positioned(
+                          top: 16,
+                          left: 24,
+                          right: 24,
+                          bottom: 12,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // 손잡이
+                              GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onVerticalDragStart: _canExpandSheet
+                                    ? _onDragStart
+                                    : null,
+                                onVerticalDragUpdate: _canExpandSheet
+                                    ? _onDragUpdate
+                                    : null,
+                                onVerticalDragEnd: _canExpandSheet
+                                    ? _onDragEnd
+                                    : null,
+                                child: SizedBox(
+                                  width: double.infinity,
+                                  height: 20,
+                                  child: Align(
+                                    alignment: Alignment.topCenter,
+                                    child: Container(
+                                      width: 40,
+                                      height: 4,
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFB7C4CB),
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+
+                              const Row(
+                                children: [
+                                  Text(
+                                    '친구들은 오는 중',
+                                    style: TextStyle(
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.w700,
+                                      color: _navy,
+                                    ),
+                                  ),
+                                  SizedBox(width: 8),
+                                  Text(
+                                    '방금 업데이트',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: _gray,
+                                    ),
+                                  ),
+                                ],
+                              ),
+
+                              const SizedBox(height: 18),
+                              Expanded(
+                                child: ListView.builder(
+                                  padding: EdgeInsets.zero,
+                                  physics: const ClampingScrollPhysics(),
+                                  itemCount: _sheetProgress == 0
+                                      ? _collapsedFriendCount
+                                      : _friends.length,
+                                  itemBuilder: (context, index) {
+                                    final friend = _friends[index];
+
+                                    return Padding(
+                                      padding: EdgeInsets.only(
+                                        left: 8,
+                                        right: 8,
+                                        bottom: index == _friends.length - 1
+                                            ? 0
+                                            : _friendGap,
+                                      ),
+                                      child: _FriendStatusRow(
+                                        initial: friend.initial,
+                                        name: friend.name,
+                                        detail: friend.detail,
+                                        status: friend.status,
+                                        warning: friend.warning,
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        // =================================================
+                        // 펼침 상태 버튼
+                        // =================================================
+                      ],
+                    ),
+                  ),
+                ),
+              ),
           ],
         ),
       ),
