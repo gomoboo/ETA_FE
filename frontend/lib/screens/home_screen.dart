@@ -19,7 +19,6 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF7FBFF),
       body: SafeArea(
-        bottom: false,
         child: Column(
           children: [
             Expanded(
@@ -417,18 +416,56 @@ class _FigmaHomeTabState extends State<_FigmaHomeTab> {
       ),
       child: Column(
         children: [
+          Container(
+            width: 54,
+            height: 54,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: _card,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: const Icon(Icons.remove, color: _accent, size: 27),
+          ),
+          const SizedBox(height: 20),
           const Text(
             '지금 확인할 약속이 없어요',
+            textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 17,
               fontWeight: FontWeight.w700,
               color: _navy,
             ),
           ),
-          const SizedBox(height: 18),
-          TextButton(
-            onPressed: widget.onAllAppointments,
-            child: const Text('전체 약속 보기'),
+          const SizedBox(height: 12),
+          const Text(
+            '예정된 약속이나 지난 약속은\n'
+            '약속 탭에서 확인할 수 있어요.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 12,
+              height: 1.5,
+              color: Color(0xFF718696),
+            ),
+          ),
+          const SizedBox(height: 22),
+          SizedBox(
+            width: double.infinity,
+            height: 44,
+            child: ElevatedButton(
+              onPressed: widget.onAllAppointments,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _blue,
+                foregroundColor: _navy,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: const Text(
+                '전체 약속 보기',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+              ),
+            ),
           ),
         ],
       ),
@@ -766,7 +803,7 @@ class _BottomNavigation extends StatelessWidget {
     return Container(
       height: 84,
       color: Colors.white,
-      padding: const EdgeInsets.fromLTRB(38, 12, 38, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 38),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [

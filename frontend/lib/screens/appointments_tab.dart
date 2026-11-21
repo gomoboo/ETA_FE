@@ -470,18 +470,24 @@ class _AppointmentsTabState extends State<AppointmentsTab> {
           const SizedBox(height: 22),
           SizedBox(
             width: double.infinity,
-            height: 48,
+            height: 44,
             child: ElevatedButton(
               onPressed: () async {
                 await Navigator.pushNamed(context, '/appointment-create');
                 if (mounted) refresh();
               },
               style: ElevatedButton.styleFrom(
-                backgroundColor: blue,
-                foregroundColor: navy,
+                backgroundColor: const Color(0xFF7DD3F7),
+                foregroundColor: const Color(0xFF18354A),
                 elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
-              child: const Text('새 약속 만들기'),
+              child: const Text(
+                '새 약속 만들기',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+              ),
             ),
           ),
         ],
