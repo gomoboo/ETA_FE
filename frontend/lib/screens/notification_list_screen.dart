@@ -18,9 +18,21 @@ class _NotificationListScreenState extends State<NotificationListScreen> {
     _reload();
   }
 
+  Future<List<Map<String, dynamic>>> _loadNotifications() async {
+    final items = await EtaNotificationService.getNotifications();
+
+    // 처음 보는 알림은 이번 방문에서 파란색으로 표시한다.
+    // 방문 기록은 저장하여 다음 방문부터 흰색으로 표시한다.
+    await EtaNotificationService.markNotificationsAsRead(
+      items.map((item) => item['id']?.toString()).whereType<String>(),
+    );
+
+    return items;
+  }
+
   void _reload() {
     setState(() {
-      _notificationsFuture = EtaNotificationService.getNotifications();
+      _notificationsFuture = _loadNotifications();
     });
   }
 

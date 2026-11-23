@@ -159,7 +159,7 @@ class _InvitedAppointmentScreenState extends State<InvitedAppointmentScreen> {
   }) {
     return SizedBox(
       width: double.infinity,
-      height: 54,
+      height: 58,
       child: ElevatedButton(
         onPressed: onPressed,
         style: ElevatedButton.styleFrom(
@@ -168,12 +168,12 @@ class _InvitedAppointmentScreenState extends State<InvitedAppointmentScreen> {
           disabledBackgroundColor: const Color(0xFFB8E9FA),
           elevation: 0,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(16),
           ),
         ),
         child: Text(
           text,
-          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
         ),
       ),
     );
@@ -336,7 +336,7 @@ class _InvitedAppointmentScreenState extends State<InvitedAppointmentScreen> {
           const SizedBox(height: 12),
           SizedBox(
             width: double.infinity,
-            height: 54,
+            height: 58,
             child: OutlinedButton(
               onPressed: joining ? null : () => Navigator.pop(context),
               style: OutlinedButton.styleFrom(
@@ -344,12 +344,12 @@ class _InvitedAppointmentScreenState extends State<InvitedAppointmentScreen> {
                 backgroundColor: Colors.white,
                 side: const BorderSide(color: Color(0xFFD7EAF5)),
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(16),
                 ),
               ),
               child: const Text(
                 '참여하지 않기',
-                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 17),
               ),
             ),
           ),

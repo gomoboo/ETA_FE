@@ -63,6 +63,26 @@ class EtaNotificationService {
     await prefs.setString(_storageKey, jsonEncode(items));
   }
 
+  static Future<void> markNotificationsAsRead(Iterable<String> ids) async {
+    final idSet = ids.toSet();
+    if (idSet.isEmpty) return;
+
+    final prefs = await SharedPreferences.getInstance();
+    final items = await getNotifications();
+    var changed = false;
+
+    for (final item in items) {
+      if (idSet.contains(item['id']?.toString()) && item['isRead'] != true) {
+        item['isRead'] = true;
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      await prefs.setString(_storageKey, jsonEncode(items));
+    }
+  }
+
   static Future<void> markAsRead(String id) async {
     final prefs = await SharedPreferences.getInstance();
     final items = await getNotifications();

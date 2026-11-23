@@ -16,7 +16,7 @@ class _MyTabScreenState extends State<MyTabScreen> {
   static const _navy = Color(0xFF18354A);
   static const _gray = Color(0xFF607280);
   static const _blue = Color(0xFF7DD3F7);
-  static const _accent = Color(0xFF1577A5);
+  static const _accent = Color(0xFF1685B5);
 
   final TextEditingController _nicknameController = TextEditingController();
 
@@ -380,7 +380,7 @@ class _MyTabScreenState extends State<MyTabScreen> {
   Widget build(BuildContext context) {
     return SingleChildScrollView(
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-      padding: const EdgeInsets.fromLTRB(24, 8, 24, 36),
+      padding: const EdgeInsets.fromLTRB(24, 24, 24, 36),
       child: _loading
           ? const Center(child: CircularProgressIndicator())
           : Column(
@@ -392,7 +392,7 @@ class _MyTabScreenState extends State<MyTabScreen> {
                     const Text(
                       '마이',
                       style: TextStyle(
-                        fontSize: 18,
+                        fontSize: 21,
                         fontWeight: FontWeight.w700,
                         color: _navy,
                       ),
@@ -404,6 +404,7 @@ class _MyTabScreenState extends State<MyTabScreen> {
                       },
                       icon: const Icon(
                         Icons.notifications_none_rounded,
+                        size: 30,
                         color: _accent,
                       ),
                     ),

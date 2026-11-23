@@ -475,7 +475,7 @@ class _FigmaHomeTabState extends State<_FigmaHomeTab> {
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(24, 48, 24, 24),
+      padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -485,7 +485,7 @@ class _FigmaHomeTabState extends State<_FigmaHomeTab> {
               const Text(
                 '이따',
                 style: TextStyle(
-                  fontSize: 18,
+                  fontSize: 21,
                   fontWeight: FontWeight.w700,
                   color: _navy,
                 ),
@@ -494,6 +494,7 @@ class _FigmaHomeTabState extends State<_FigmaHomeTab> {
                 onPressed: () => Navigator.pushNamed(context, '/notifications'),
                 icon: const Icon(
                   Icons.notifications_none_rounded,
+                  size: 30,
                   color: _accent,
                 ),
               ),

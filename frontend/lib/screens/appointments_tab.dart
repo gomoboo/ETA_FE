@@ -708,7 +708,7 @@ class _AppointmentsTabState extends State<AppointmentsTab> {
     return Stack(
       children: [
         SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(24, 48, 24, 110),
+          padding: const EdgeInsets.fromLTRB(24, 24, 24, 110),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -718,7 +718,7 @@ class _AppointmentsTabState extends State<AppointmentsTab> {
                   const Text(
                     '약속',
                     style: TextStyle(
-                      fontSize: 18,
+                      fontSize: 21,
                       fontWeight: FontWeight.w700,
                       color: navy,
                     ),
@@ -728,6 +728,7 @@ class _AppointmentsTabState extends State<AppointmentsTab> {
                         Navigator.pushNamed(context, '/notifications'),
                     icon: const Icon(
                       Icons.notifications_none_rounded,
+                      size: 30,
                       color: accent,
                     ),
                   ),
