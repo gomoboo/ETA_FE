@@ -9,6 +9,7 @@ import '../services/location_tracking_service.dart';
 import '../services/eta_websocket_service.dart';
 import '../services/guest_identity_service.dart';
 import '../services/eta_api_service.dart';
+import '../services/eta_notification_service.dart';
 import 'arrival_checkin_screen.dart';
 import 'appointment_result_screen.dart';
 
@@ -269,14 +270,14 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
   // GPS 10초 주기 수집
   // ===============================================================
 
-    Future<void> _connectRealtime(int appointmentId, int participantId) async {
-      if (_socketStarted) return;
-      _socketStarted = true;
-      _activeAppointmentId = appointmentId;
-      unawaited(_loadAppointmentDetail(appointmentId));
+  Future<void> _connectRealtime(int appointmentId, int participantId) async {
+    if (_socketStarted) return;
+    _socketStarted = true;
+    _activeAppointmentId = appointmentId;
+    unawaited(_loadAppointmentDetail(appointmentId));
 
-      try {
-        final guestUuid = await GuestIdentityService.getOrCreateUuid();
+    try {
+      final guestUuid = await GuestIdentityService.getOrCreateUuid();
 
       if (!mounted) return;
 
@@ -327,6 +328,29 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
       if (decoded is! Map<String, dynamic>) return;
 
       if (decoded['type'] == 'poke:received') {
+        final sender = decoded['senderNickname']?.toString().trim();
+        final appointmentTitle = decoded['appointmentTitle']?.toString().trim();
+        final pokeId = decoded['pokeId']?.toString();
+
+        final nickname = sender == null || sender.isEmpty ? '친구' : sender;
+        final title = appointmentTitle == null || appointmentTitle.isEmpty
+            ? _radarAppointmentTitle
+            : appointmentTitle;
+
+        try {
+          await EtaNotificationService.saveNotification(
+            id: pokeId != null && pokeId.isNotEmpty
+                ? 'poke:$appointmentId:$pokeId'
+                : 'poke:$appointmentId:${DateTime.now().microsecondsSinceEpoch}',
+            type: 'poke',
+            title: '$nickname님이 찌르기를 보냈어요',
+            description: '$title · 출발 신호가 도착했어요.',
+            appointmentId: appointmentId,
+          );
+        } catch (error) {
+          debugPrint('찌르기 알림 저장 실패: $error');
+        }
+
         _pokeDialogQueue = _pokeDialogQueue
             .then((_) => _showReceivedPoke(decoded))
             .catchError((Object error) {
@@ -348,6 +372,47 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
       if (decoded['type'] == 'checkin:completed') {
         final arrivedId = decoded['participantId'];
         if (arrivedId is! int) return;
+
+        // 다른 참가자의 실제 도착 이벤트만 알림에 기록
+        if (arrivedId != myParticipantId) {
+          try {
+            var detail = _cachedAppointmentDetail;
+
+            // 아직 약속 정보가 로딩되지 않았다면 서버에서 조회
+            detail ??= await EtaApiService.getAppointmentDetail(appointmentId);
+
+            final participants = detail['participants'];
+            String? arrivedNickname;
+
+            if (participants is List) {
+              for (final participant in participants) {
+                if (participant is Map &&
+                    participant['participantId'] == arrivedId) {
+                  arrivedNickname = participant['nickname']?.toString().trim();
+                  break;
+                }
+              }
+            }
+
+            final appointmentTitle = detail['title']?.toString().trim() ?? '';
+
+            if (arrivedNickname != null &&
+                arrivedNickname.isNotEmpty &&
+                appointmentTitle.isNotEmpty) {
+              await EtaNotificationService.saveNotification(
+                id: 'arrival:$appointmentId:$arrivedId',
+                type: 'arrival',
+                title: '$arrivedNickname님이 도착했어요',
+                description: '$appointmentTitle · 친구의 도착 상태를 확인해요.',
+                appointmentId: appointmentId,
+              );
+            } else {
+              debugPrint('도착 알림: 참가자 이름 또는 약속 정보 확인 필요');
+            }
+          } catch (error) {
+            debugPrint('도착 알림 저장 실패: $error');
+          }
+        }
 
         if (arrivedId == myParticipantId) {
           _myArrivalConfirmed = true;
@@ -829,10 +894,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
         height: _FriendStatusRow.rowHeight,
         child: Row(
           children: [
-            const CircleAvatar(
-              radius: 20,
-              backgroundColor: _radarLoadingColor,
-            ),
+            const CircleAvatar(radius: 20, backgroundColor: _radarLoadingColor),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -869,10 +931,8 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
 
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
-        builder: (_) => AppointmentResultScreen(
-          appointmentId: id,
-          fromRadar: true,
-        ),
+        builder: (_) =>
+            AppointmentResultScreen(appointmentId: id, fromRadar: true),
       ),
     );
   }
@@ -1122,9 +1182,9 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
                       ElevatedButton(
                         onPressed: selected.isEmpty
                             ? null
-                            : () => Navigator.of(sheetContext).pop(
-                                selected.toList(),
-                              ),
+                            : () =>
+                                  Navigator.of(sheetContext)
+                                      .pop(selected.toList()),
                         child: Text(
                           selected.isEmpty ? '찌르기' : '${selected.length}명 찌르기',
                         ),
@@ -1154,20 +1214,14 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
     for (final id in selectedIds) {
       if (!eligibleIds.contains(id) || !_canPoke(appointmentId, id)) continue;
 
-      _socketService.send({
-        'type': 'poke:send',
-        'targetParticipantId': id,
-      });
-      _pokeCooldownUntil[(appointmentId, id)] =
-          DateTime.now().add(const Duration(seconds: 60));
+      _socketService.send({'type': 'poke:send', 'targetParticipantId': id});
+      _pokeCooldownUntil[(appointmentId, id)] = DateTime.now().add(
+        const Duration(seconds: 60),
+      );
       sent++;
     }
 
-    _radarNotice(
-      sent == 0
-          ? '지금 찌를 수 있는 대상이 없어요.'
-          : '$sent명에게 찌르기 요청을 보냈어요.',
-    );
+    _radarNotice(sent == 0 ? '지금 찌를 수 있는 대상이 없어요.' : '$sent명에게 찌르기 요청을 보냈어요.');
   }
 
   Future<bool?> _confirmPoke(String nickname) {
@@ -1177,9 +1231,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
       builder: (dialogContext) => Dialog(
         backgroundColor: Colors.white,
         insetPadding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(24),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(24, 20, 24, 12),
           child: Column(
@@ -1259,9 +1311,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
       builder: (dialogContext) => Dialog(
         backgroundColor: Colors.white,
         insetPadding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(24),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(24, 24, 24, 12),
           child: Column(
@@ -1841,9 +1891,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
                                   ),
                                   const SizedBox(width: 8),
                                   Text(
-                                    _hasReceivedMapSync
-                                        ? '방금 업데이트'
-                                        : '위치 확인 중',
+                                    _hasReceivedMapSync ? '방금 업데이트' : '위치 확인 중',
                                     style: const TextStyle(
                                       fontSize: 12,
                                       color: _gray,

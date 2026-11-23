@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../services/eta_api_service.dart';
+import '../services/eta_notification_service.dart';
 import 'invited_appointment_screen.dart';
 
 class AppointmentsTab extends StatefulWidget {
@@ -31,7 +32,7 @@ class _AppointmentsTabState extends State<AppointmentsTab> {
   @override
   void initState() {
     super.initState();
-    appointmentsFuture = EtaApiService.getHomeAppointments();
+    appointmentsFuture = _loadAppointmentsWithNotifications();
   }
 
   @override
@@ -42,8 +43,46 @@ class _AppointmentsTabState extends State<AppointmentsTab> {
 
   void refresh() {
     setState(() {
-      appointmentsFuture = EtaApiService.getHomeAppointments();
+      appointmentsFuture = _loadAppointmentsWithNotifications();
     });
+  }
+
+  Future<Map<String, dynamic>> _loadAppointmentsWithNotifications() async {
+    final data = await EtaApiService.getHomeAppointments();
+
+    try {
+      final active = data['activeAppointments'];
+      final upcoming = data['upcomingAppointments'];
+
+      final appointments = <dynamic>[
+        if (active is List) ...active,
+        if (upcoming is List) ...upcoming,
+      ];
+
+      for (final item in appointments) {
+        if (item is! Map) continue;
+        if (item['isLocationSharingActive'] != true) continue;
+
+        final appointmentId = toId(item['appointmentId']);
+        final title = item['title']?.toString().trim();
+
+        if (appointmentId == null || title == null || title.isEmpty) {
+          continue;
+        }
+
+        await EtaNotificationService.saveNotification(
+          id: 'location-start:$appointmentId',
+          type: 'location_start',
+          title: '위치 공유가 시작됐어요',
+          description: '$title · 친구들이 오는 길을 확인해요.',
+          appointmentId: appointmentId,
+        );
+      }
+    } catch (error) {
+      debugPrint('위치 공유 시작 알림 저장 실패: $error');
+    }
+
+    return data;
   }
 
   int? toId(dynamic value) {

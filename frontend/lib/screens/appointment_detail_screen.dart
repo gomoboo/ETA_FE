@@ -245,13 +245,15 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
         : <Map>[];
 
     final myParticipantId = detail['myParticipantId']?.toString();
-    final names = participants.map((participant) {
-      if (myParticipantId != null &&
-          participant['participantId']?.toString() == myParticipantId) {
-        return '나';
-      }
-      return participant['nickname']?.toString() ?? '참가자';
-    }).join(' · ');
+    final names = participants
+        .map((participant) {
+          if (myParticipantId != null &&
+              participant['participantId']?.toString() == myParticipantId) {
+            return '나';
+          }
+          return participant['nickname']?.toString() ?? '참가자';
+        })
+        .join(' · ');
     String locationDescription = '위치 공유 시작 시간 확인 필요';
 
     if (date != null && radarStart != null) {
@@ -270,7 +272,7 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
         // 만나는 날짜 · 시간 · 장소
         Container(
           width: double.infinity,
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(24),
@@ -280,10 +282,10 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
             children: [
               const Text(
                 '만나는 날짜와 시간',
-                style: TextStyle(fontSize: 13, color: gray),
+                style: TextStyle(fontSize: 14, color: gray),
               ),
 
-              const SizedBox(height: 16),
+              const SizedBox(height: 8),
 
               Wrap(
                 spacing: 8,
@@ -309,15 +311,15 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
                 ],
               ),
 
-              const SizedBox(height: 14),
+              const SizedBox(height: 8),
 
               const Divider(height: 1, thickness: 1, color: Color(0xFFE1F0F8)),
 
-              const SizedBox(height: 14),
+              const SizedBox(height: 12),
 
-              const Text('만나는 장소', style: TextStyle(fontSize: 13, color: gray)),
+              const Text('만나는 장소', style: TextStyle(fontSize: 14, color: gray)),
 
-              const SizedBox(height: 14),
+              const SizedBox(height: 8),
 
               Text(
                 placeName,
@@ -331,12 +333,12 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
           ),
         ),
 
-        const SizedBox(height: 18),
+        const SizedBox(height: 16),
 
         // 참가자 및 지각 규칙
         Container(
           width: double.infinity,
-          padding: const EdgeInsets.fromLTRB(22, 14, 22, 14),
+          padding: const EdgeInsets.fromLTRB(22, 10, 22, 10),
           decoration: BoxDecoration(
             color: pale,
             borderRadius: BorderRadius.circular(24),
@@ -346,30 +348,30 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
             children: [
               Text(
                 '참가자 ${participants.length}명',
-                style: const TextStyle(fontSize: 12, color: gray),
+                style: const TextStyle(fontSize: 14, color: gray),
               ),
 
-              const SizedBox(height: 8),
+              const SizedBox(height: 4),
 
               Text(
                 names.isEmpty ? '참가자 정보가 없어요' : names,
                 style: const TextStyle(
-                  fontSize: 15,
+                  fontSize: 18,
                   fontWeight: FontWeight.w700,
                   color: navy,
                 ),
               ),
 
-              const SizedBox(height: 18),
+              const SizedBox(height: 10),
 
-              const Text('지각 규칙', style: TextStyle(fontSize: 12, color: gray)),
+              const Text('지각 규칙', style: TextStyle(fontSize: 14, color: gray)),
 
-              const SizedBox(height: 8),
+              const SizedBox(height: 4),
 
               Text(
                 penaltyText(detail['penalty']),
                 style: const TextStyle(
-                  fontSize: 15,
+                  fontSize: 18,
                   fontWeight: FontWeight.w700,
                   color: accent,
                 ),
@@ -378,11 +380,14 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
           ),
         ),
 
-        const SizedBox(height: 18),
+        const SizedBox(height: 10),
 
-        Text(
-          locationDescription,
-          style: const TextStyle(fontSize: 13, color: gray),
+        Padding(
+          padding: const EdgeInsets.only(left: 4),
+          child: Text(
+            locationDescription,
+            style: const TextStyle(fontSize: 12, color: gray),
+          ),
         ),
       ],
     );
@@ -467,13 +472,13 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
 
   Widget bottomActions() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
+      padding: const EdgeInsets.fromLTRB(24, 12, 24, 16),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           SizedBox(
             width: double.infinity,
-            height: 52,
+            height: 58,
             child: ElevatedButton(
               onPressed: _openFriendInvite,
               style: ElevatedButton.styleFrom(
@@ -481,21 +486,25 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
                 foregroundColor: navy,
                 elevation: 0,
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(18),
+                  borderRadius: BorderRadius.circular(16),
                 ),
               ),
               child: const Text(
                 '친구 초대',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
               ),
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 6),
           TextButton(
             onPressed: _isLeaving ? null : _confirmLeaveAppointment,
             child: const Text(
               '약속 나가기',
-              style: TextStyle(color: navy, fontWeight: FontWeight.w700),
+              style: TextStyle(
+                fontSize: 15,
+                color: navy,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
         ],
@@ -508,13 +517,13 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
     return Scaffold(
       backgroundColor: background,
       appBar: PreferredSize(
-        preferredSize: const Size.fromHeight(94),
+        preferredSize: const Size.fromHeight(74),
         child: ColoredBox(
           color: background,
           child: SafeArea(
             bottom: false,
             child: SizedBox(
-              height: 94,
+              height: 74,
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(12, 8, 24, 0),
                 child: Row(
@@ -544,7 +553,7 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
-                                fontSize: 18,
+                                fontSize: 21,
                                 fontWeight: FontWeight.w700,
                                 color: Color(0xFF18354A),
                               ),
@@ -593,17 +602,23 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
 
                         final detail = snapshot.data ?? <String, dynamic>{};
                         final radarStart = parseDate(detail['radarStartAt']);
-                        final status = (detail['status'] ?? detail['appointmentStatus'])
-                            ?.toString()
-                            .toUpperCase();
+                        final status =
+                            (detail['status'] ?? detail['appointmentStatus'])
+                                ?.toString()
+                                .toUpperCase();
                         final showCountdown =
-                            radarStart != null && status != 'COMPLETED' && status != 'CANCELLED';
+                            radarStart != null &&
+                            status != 'COMPLETED' &&
+                            status != 'CANCELLED';
 
                         return Column(
                           children: [
                             if (showCountdown)
                               Padding(
-                                padding: const EdgeInsets.only(top: 6, bottom: 26),
+                                padding: const EdgeInsets.only(
+                                  top: 6,
+                                  bottom: 26,
+                                ),
                                 child: _RadarStartCountdown(
                                   startsAt: radarStart,
                                   createdAt: parseDate(detail['createdAt']),
@@ -611,7 +626,12 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
                               ),
                             Expanded(
                               child: SingleChildScrollView(
-                                padding: EdgeInsets.fromLTRB(24, showCountdown ? 0 : 4, 24, 24),
+                                padding: EdgeInsets.fromLTRB(
+                                  24,
+                                  showCountdown ? 0 : 4,
+                                  24,
+                                  24,
+                                ),
                                 child: detailContent(detail),
                               ),
                             ),
@@ -628,12 +648,8 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
   }
 }
 
-
 class _RadarStartCountdown extends StatefulWidget {
-  const _RadarStartCountdown({
-    required this.startsAt,
-    required this.createdAt,
-  });
+  const _RadarStartCountdown({required this.startsAt, required this.createdAt});
 
   final DateTime startsAt;
   final DateTime? createdAt;

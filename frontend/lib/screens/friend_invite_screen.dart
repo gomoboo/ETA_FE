@@ -138,13 +138,13 @@ class FriendInviteScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: background,
       appBar: PreferredSize(
-        preferredSize: const Size.fromHeight(94),
+        preferredSize: const Size.fromHeight(74),
         child: ColoredBox(
           color: background,
           child: SafeArea(
             bottom: false,
             child: SizedBox(
-              height: 94,
+              height: 74,
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(12, 8, 24, 0),
                 child: Row(
@@ -166,7 +166,7 @@ class FriendInviteScreen extends StatelessWidget {
                       child: Text(
                         '친구 초대',
                         style: TextStyle(
-                          fontSize: 18,
+                          fontSize: 21,
                           fontWeight: FontWeight.w700,
                           color: Color(0xFF18354A),
                         ),
@@ -181,7 +181,7 @@ class FriendInviteScreen extends StatelessWidget {
       ),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(24, 2, 24, 32),
+          padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -193,7 +193,7 @@ class FriendInviteScreen extends StatelessWidget {
                   color: navy,
                 ),
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 6),
               const Text(
                 '초대 링크를 친구에게 보내세요.',
                 style: TextStyle(fontSize: 13, color: gray),
@@ -201,7 +201,7 @@ class FriendInviteScreen extends StatelessWidget {
               const SizedBox(height: 28),
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.fromLTRB(22, 26, 22, 30),
+                padding: const EdgeInsets.fromLTRB(22, 20, 22, 26),
                 decoration: BoxDecoration(
                   color: pale,
                   borderRadius: BorderRadius.circular(22),
@@ -226,7 +226,7 @@ class FriendInviteScreen extends StatelessWidget {
                         color: Color(0xFF607280),
                       ),
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 6),
                     Text(
                       placeText,
                       style: const TextStyle(
@@ -275,10 +275,10 @@ class FriendInviteScreen extends StatelessWidget {
                   ],
                 ),
               ),
-              const SizedBox(height: 26),
+              const SizedBox(height: 36),
               SizedBox(
                 width: double.infinity,
-                height: 52,
+                height: 58,
                 child: ElevatedButton(
                   onPressed: hasLink ? () => copyLink(context) : null,
                   style: ElevatedButton.styleFrom(
@@ -291,16 +291,16 @@ class FriendInviteScreen extends StatelessWidget {
                   ),
                   child: const Text(
                     '링크 복사',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
                   ),
                 ),
               ),
-              const SizedBox(height: 18),
+              const SizedBox(height: 12),
               Builder(
                 builder: (buttonContext) {
                   return SizedBox(
                     width: double.infinity,
-                    height: 52,
+                    height: 58,
                     child: OutlinedButton(
                       onPressed: hasLink
                           ? () => shareLink(buttonContext)
@@ -316,7 +316,7 @@ class FriendInviteScreen extends StatelessWidget {
                       child: const Text(
                         '카카오톡으로 공유',
                         style: TextStyle(
-                          fontSize: 16,
+                          fontSize: 17,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
@@ -324,7 +324,7 @@ class FriendInviteScreen extends StatelessWidget {
                   );
                 },
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 10),
               const Text(
                 '참가자는 참여 전 지각 규칙을 확인하고 동의해요.',
                 style: TextStyle(fontSize: 12, color: gray),

@@ -201,12 +201,12 @@ class _InvitedAppointmentScreenState extends State<InvitedAppointmentScreen> {
               color: navy,
             ),
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 14),
           Text(
             formatDate(p['meetAt']),
             style: const TextStyle(fontSize: 14, color: gray),
           ),
-          const SizedBox(height: 15),
+          const SizedBox(height: 12),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -220,9 +220,9 @@ class _InvitedAppointmentScreenState extends State<InvitedAppointmentScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 14),
           const Divider(color: Color(0xFFD7EAF5)),
-          const SizedBox(height: 20),
+          const SizedBox(height: 16),
           const Text(
             '지각 규칙',
             style: TextStyle(
@@ -231,7 +231,7 @@ class _InvitedAppointmentScreenState extends State<InvitedAppointmentScreen> {
               fontWeight: FontWeight.w700,
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           Text(
             p['penaltySummary']?.toString() ?? '규칙 정보 없음',
             style: const TextStyle(
@@ -240,7 +240,7 @@ class _InvitedAppointmentScreenState extends State<InvitedAppointmentScreen> {
               fontWeight: FontWeight.w700,
             ),
           ),
-          const SizedBox(height: 25),
+          const SizedBox(height: 14),
           const Text(
             '위치 공유',
             style: TextStyle(
@@ -249,7 +249,7 @@ class _InvitedAppointmentScreenState extends State<InvitedAppointmentScreen> {
               fontWeight: FontWeight.w700,
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           Text(
             p['radarStartSummary']?.toString() ?? '공유 시간 확인 필요',
             style: const TextStyle(fontSize: 14, color: navy, height: 1.5),
@@ -261,26 +261,26 @@ class _InvitedAppointmentScreenState extends State<InvitedAppointmentScreen> {
 
   Widget joinPage() {
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(24, 28, 24, 42),
+      padding: const EdgeInsets.fromLTRB(24, 18, 24, 28),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            '약속에 초대받았어요',
+            '친구가 약속에 초대했어요',
             style: TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.w700,
               color: navy,
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
           const Text(
             '약속 정보와 지각 규칙을 확인한 뒤 참여해 주세요.',
             style: TextStyle(fontSize: 13, color: gray),
           ),
-          const SizedBox(height: 30),
+          const SizedBox(height: 14),
           inviteDetails(),
-          const SizedBox(height: 36),
+          const SizedBox(height: 28),
           const Text(
             '닉네임 설정',
             style: TextStyle(
@@ -360,13 +360,13 @@ class _InvitedAppointmentScreenState extends State<InvitedAppointmentScreen> {
 
   Widget expiredPage() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 35, 24, 32),
+      padding: const EdgeInsets.fromLTRB(24, 43, 24, 32),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
             width: double.infinity,
-            height: 215,
+            height: 227,
             decoration: BoxDecoration(
               color: pale,
               borderRadius: BorderRadius.circular(28),
@@ -412,7 +412,7 @@ class _InvitedAppointmentScreenState extends State<InvitedAppointmentScreen> {
               color: navy,
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 14),
           const Text(
             '종료된 약속의 초대 링크로는\n'
             '더 이상 참가할 수 없어요.',
@@ -464,13 +464,35 @@ class _InvitedAppointmentScreenState extends State<InvitedAppointmentScreen> {
       backgroundColor: background,
       appBar: AppBar(
         backgroundColor: background,
-        foregroundColor: navy,
+        surfaceTintColor: Colors.transparent,
         elevation: 0,
         scrolledUnderElevation: 0,
-        toolbarHeight: 75,
-        title: const Text(
-          '약속 초대',
-          style: TextStyle(fontSize: 19, fontWeight: FontWeight.w700),
+        toolbarHeight: 56,
+        leadingWidth: 52,
+        leading: Padding(
+          padding: const EdgeInsets.only(top: 12, left: 12),
+          child: IconButton(
+            onPressed: () => Navigator.of(context).maybePop(),
+            icon: const Icon(
+              Icons.arrow_back_ios_new_rounded,
+              size: 20,
+              color: accent,
+            ),
+          ),
+        ),
+        centerTitle: false,
+        titleSpacing: 0,
+        title: const Padding(
+          padding: EdgeInsets.only(top: 12),
+          child: Text(
+            '약속 초대',
+            style: TextStyle(
+              fontSize: 21,
+              fontWeight: FontWeight.w700,
+              color: navy,
+              height: 1.0,
+            ),
+          ),
         ),
       ),
       body: SafeArea(child: expired ? expiredPage() : joinPage()),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/eta_api_service.dart';
+import '../services/eta_notification_service.dart';
 import 'appointment_warrant_screen.dart';
 
 /// 피그마 S-53~55 / UI 설계서 S-56~58 지각 정산 화면.
@@ -63,6 +64,30 @@ class _AppointmentResultScreenState extends State<AppointmentResultScreen> {
 
     // 서버가 정산 결과를 실제로 제공하는 경우에만 완료된 정산으로 표시한다.
     final settlement = await EtaApiService.getSettlement(widget.appointmentId);
+
+    // 실제 정산 결과가 조회된 경우에만 알림 저장
+    final status = (appointment['status'] ?? appointment['appointmentStatus'])
+        ?.toString()
+        .toUpperCase();
+
+    if (status == 'COMPLETED') {
+      final title = appointment['title']?.toString().trim();
+
+      if (title != null && title.isNotEmpty) {
+        try {
+          await EtaNotificationService.saveNotification(
+            id: 'settlement:${widget.appointmentId}',
+            type: 'settlement',
+            title: '정산 결과가 준비됐어요',
+            description: '$title · 도착 기록과 지각비를 확인해요.',
+            appointmentId: widget.appointmentId,
+          );
+        } catch (error) {
+          debugPrint('정산 알림 저장 실패: $error');
+        }
+      }
+    }
+
     return _SettlementViewData(
       appointment: appointment,
       settlement: settlement,
@@ -552,7 +577,8 @@ class _AppointmentResultScreenState extends State<AppointmentResultScreen> {
     return _settlementStatusCard(
       icon: Icons.remove,
       title: '아직 정산할 수 없어요',
-      description: '참가자의 도착 기록이 생기면\n'
+      description:
+          '참가자의 도착 기록이 생기면\n'
           '이곳에서 지각 정산을 시작할 수 있어요.',
       buttonLabel: '실시간 레이더 보기',
       onPressed: () => Navigator.of(context).maybePop(),
@@ -644,24 +670,26 @@ class _AppointmentResultScreenState extends State<AppointmentResultScreen> {
                     if (snapshot.connectionState != ConnectionState.done) {
                       return _loadingState();
                     }
-                    if (widget.fromRadar && _isSettlementNotReady(snapshot.error)) {
-              return _radarSettlementPending();
-            }
+                    if (widget.fromRadar &&
+                        _isSettlementNotReady(snapshot.error)) {
+                      return _radarSettlementPending();
+                    }
 
-            if (snapshot.hasError || !snapshot.hasData) {
-              return _settlementStatusCard(
-                icon: Icons.priority_high_rounded,
-                title: '지각 정산 결과를 불러오지 못했어요',
-                description: '네트워크 연결 문제로 도착 기록을\n'
-                    '불러오지 못했어요. 연결 후 다시 시도해 주세요.',
-                buttonLabel: '다시 시도',
-                onPressed: _retry,
-              );
-            }
+                    if (snapshot.hasError || !snapshot.hasData) {
+                      return _settlementStatusCard(
+                        icon: Icons.priority_high_rounded,
+                        title: '지각 정산 결과를 불러오지 못했어요',
+                        description:
+                            '네트워크 연결 문제로 도착 기록을\n'
+                            '불러오지 못했어요. 연결 후 다시 시도해 주세요.',
+                        buttonLabel: '다시 시도',
+                        onPressed: _retry,
+                      );
+                    }
 
-            final data = snapshot.requireData;
+                    final data = snapshot.requireData;
                     if (data.upcoming) {
-              if (widget.fromRadar) return _radarSettlementPending();
+                      if (widget.fromRadar) return _radarSettlementPending();
                       final date = DateTime.tryParse(
                         data.appointment['meetAt']?.toString() ?? '',
                       )?.toLocal();

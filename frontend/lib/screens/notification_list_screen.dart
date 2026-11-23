@@ -1,71 +1,96 @@
 import 'package:flutter/material.dart';
 
-class NotificationListScreen extends StatelessWidget {
+import '../services/eta_notification_service.dart';
+
+class NotificationListScreen extends StatefulWidget {
   const NotificationListScreen({super.key});
+
+  @override
+  State<NotificationListScreen> createState() => _NotificationListScreenState();
+}
+
+class _NotificationListScreenState extends State<NotificationListScreen> {
+  late Future<List<Map<String, dynamic>>> _notificationsFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _reload();
+  }
+
+  void _reload() {
+    setState(() {
+      _notificationsFuture = EtaNotificationService.getNotifications();
+    });
+  }
 
   static const Color _background = Color(0xFFF7FBFF);
   static const Color _navy = Color(0xFF18354A);
   static const Color _subText = Color(0xFF607280);
-  static const Color _blue = Color(0xFF1577A5);
+  static const Color _blue = Color(0xFF1685B5);
 
-  // 실제 알림 API 연동 전 UI 확인용 예시 데이터
-  static const List<_NotificationItem> _notifications = [
-    _NotificationItem(
-      title: '정산 결과가 준비됐어요',
-      description: '강남역 맛집 탐방 · 도착 기록과 지각비를 확인해요.',
-      time: '5분 전',
-      isNew: true,
-    ),
-    _NotificationItem(
-      title: '민수님이 도착했어요',
-      description: '강남역 맛집 탐방 · 친구의 도착 상태를 확인해요.',
-      time: '20분 전',
-    ),
-    _NotificationItem(
-      title: '지민님이 찌르기를 보냈어요',
-      description: '강남역 맛집 탐방 · 출발 신호가 도착했어요.',
-      time: '45분 전',
-    ),
-    _NotificationItem(
-      title: '위치 공유가 시작됐어요',
-      description: '강남역 맛집 탐방 · 친구들이 오는 길을 확인해요.',
-      time: '1시간 전',
-    ),
-  ];
+  Widget _notificationCard(Map<String, dynamic> item) {
+    final isNew = item['isRead'] != true;
+    final createdAt = DateTime.tryParse(item['createdAt']?.toString() ?? '')
+        ?.toLocal();
 
-  Widget _notificationCard(_NotificationItem item) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 18),
-      decoration: BoxDecoration(
-        color: item.isNew ? const Color(0xFFEAF7FE) : Colors.white,
-        borderRadius: BorderRadius.circular(22),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            item.title,
-            style: const TextStyle(
-              fontSize: 17,
-              fontWeight: FontWeight.w700,
-              color: _navy,
+    String timeText = '';
+    if (createdAt != null) {
+      final minutes = DateTime.now().difference(createdAt).inMinutes;
+      if (minutes < 1) {
+        timeText = '방금 전';
+      } else if (minutes < 60) {
+        timeText = '$minutes분 전';
+      } else if (minutes < 1440) {
+        timeText = '${minutes ~/ 60}시간 전';
+      } else {
+        timeText = '${minutes ~/ 1440}일 전';
+      }
+    }
+
+    return InkWell(
+      onTap: () async {
+        final id = item['id']?.toString();
+        if (id != null) {
+          await EtaNotificationService.markAsRead(id);
+        }
+        if (mounted) _reload();
+      },
+      borderRadius: BorderRadius.circular(22),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 14),
+        decoration: BoxDecoration(
+          color: isNew ? const Color(0xFFEAF7FE) : Colors.white,
+          borderRadius: BorderRadius.circular(22),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              item['title']?.toString() ?? '',
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: _navy,
+              ),
             ),
-          ),
-          const SizedBox(height: 9),
-          Text(
-            item.description,
-            style: const TextStyle(fontSize: 14, height: 1.5, color: _subText),
-          ),
-          const SizedBox(height: 26),
-          Text(
-            item.time,
-            style: TextStyle(
-              fontSize: 13,
-              color: item.isNew ? _blue : _subText,
+            const SizedBox(height: 5),
+            Text(
+              item['description']?.toString() ?? '',
+              style: const TextStyle(
+                fontSize: 15,
+                height: 1.5,
+                color: _subText,
+              ),
             ),
-          ),
-        ],
+            const SizedBox(height: 18),
+            Text(
+              timeText,
+              style: TextStyle(fontSize: 14, color: isNew ? _blue : _subText),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -74,69 +99,101 @@ class NotificationListScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _background,
-      appBar: AppBar(
-        backgroundColor: _background,
-        foregroundColor: _navy,
-        surfaceTintColor: Colors.transparent,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        centerTitle: false,
-        titleSpacing: 0,
-        title: const Text(
-          '알림',
-          style: TextStyle(
-            fontSize: 19,
-            fontWeight: FontWeight.w700,
-            color: _navy,
-          ),
-        ),
-      ),
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(24, 44, 24, 32),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                '약속 소식을 확인해 보세요',
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.w700,
-                  color: _navy,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 17, 24, 0),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 48,
+                    height: 48,
+                    child: IconButton(
+                      onPressed: () => Navigator.of(context).maybePop(),
+                      padding: EdgeInsets.zero,
+                      icon: const Icon(
+                        Icons.arrow_back_ios_new_rounded,
+                        size: 20,
+                        color: _blue,
+                      ),
+                    ),
+                  ),
+                  const Text(
+                    '알림',
+                    style: TextStyle(
+                      fontSize: 21,
+                      fontWeight: FontWeight.w700,
+                      color: _navy,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '약속 소식을 확인해 보세요',
+                      style: TextStyle(
+                        fontSize: 23,
+                        fontWeight: FontWeight.w700,
+                        color: _navy,
+                      ),
+                    ),
+                    const SizedBox(height: 15),
+                    const Text(
+                      '최근 알림',
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w700,
+                        color: _navy,
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    FutureBuilder<List<Map<String, dynamic>>>(
+                      future: _notificationsFuture,
+                      builder: (context, snapshot) {
+                        if (!snapshot.hasData) {
+                          return const Center(
+                            child: CircularProgressIndicator(),
+                          );
+                        }
+
+                        final notifications = snapshot.data!;
+                        if (notifications.isEmpty) {
+                          return const Padding(
+                            padding: EdgeInsets.only(top: 65),
+                            child: Center(
+                              child: Text(
+                                '아직 도착한 알림이 없어요.',
+                                style: TextStyle(fontSize: 14, color: _subText),
+                              ),
+                            ),
+                          );
+                        }
+
+                        return Column(
+                          children: [
+                            for (final item in notifications) ...[
+                              _notificationCard(item),
+                              const SizedBox(height: 12),
+                            ],
+                          ],
+                        );
+                      },
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 24),
-              const Text(
-                '최근 알림',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  color: _navy,
-                ),
-              ),
-              const SizedBox(height: 18),
-              for (final item in _notifications) ...[
-                _notificationCard(item),
-                const SizedBox(height: 14),
-              ],
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
   }
-}
-
-class _NotificationItem {
-  const _NotificationItem({
-    required this.title,
-    required this.description,
-    required this.time,
-    this.isNew = false,
-  });
-
-  final String title;
-  final String description;
-  final String time;
-  final bool isNew;
 }
