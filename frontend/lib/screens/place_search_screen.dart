@@ -101,7 +101,7 @@ class _PlaceSearchScreenState
           'Authorization':
               'KakaoAK $_kakaoRestApiKey',
         },
-      );
+      ).timeout(const Duration(seconds: 10));
 
       if (!mounted) return;
 
@@ -155,6 +155,7 @@ class _PlaceSearchScreenState
         _isLoading = false;
       });
     } catch (e) {
+      debugPrint('장소 검색 요청 실패: $e');
       if (!mounted) return;
 
       setState(() {
