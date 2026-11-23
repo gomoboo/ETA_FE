@@ -11,6 +11,7 @@ class NotificationListScreen extends StatefulWidget {
 
 class _NotificationListScreenState extends State<NotificationListScreen> {
   late Future<List<Map<String, dynamic>>> _notificationsFuture;
+  int _notificationCount = 0;
 
   @override
   void initState() {
@@ -20,6 +21,12 @@ class _NotificationListScreenState extends State<NotificationListScreen> {
 
   Future<List<Map<String, dynamic>>> _loadNotifications() async {
     final items = await EtaNotificationService.getNotifications();
+
+    if (mounted && _notificationCount != items.length) {
+      setState(() {
+        _notificationCount = items.length;
+      });
+    }
 
     // 처음 보는 알림은 이번 방문에서 파란색으로 표시한다.
     // 방문 기록은 저장하여 다음 방문부터 흰색으로 표시한다.
@@ -71,7 +78,7 @@ class _NotificationListScreenState extends State<NotificationListScreen> {
       borderRadius: BorderRadius.circular(22),
       child: Container(
         width: double.infinity,
-        padding: const EdgeInsets.fromLTRB(20, 20, 20, 14),
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
         decoration: BoxDecoration(
           color: isNew ? const Color(0xFFEAF7FE) : Colors.white,
           borderRadius: BorderRadius.circular(22),
@@ -82,24 +89,24 @@ class _NotificationListScreenState extends State<NotificationListScreen> {
             Text(
               item['title']?.toString() ?? '',
               style: const TextStyle(
-                fontSize: 18,
+                fontSize: 17,
                 fontWeight: FontWeight.w700,
                 color: _navy,
               ),
             ),
-            const SizedBox(height: 5),
+            const SizedBox(height: 4),
             Text(
               item['description']?.toString() ?? '',
               style: const TextStyle(
-                fontSize: 15,
-                height: 1.5,
+                fontSize: 13,
+                height: 1.35,
                 color: _subText,
               ),
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 10),
             Text(
               timeText,
-              style: TextStyle(fontSize: 14, color: isNew ? _blue : _subText),
+              style: TextStyle(fontSize: 12, color: isNew ? _blue : _subText),
             ),
           ],
         ),
@@ -145,6 +152,9 @@ class _NotificationListScreenState extends State<NotificationListScreen> {
             ),
             Expanded(
               child: SingleChildScrollView(
+                physics: _notificationCount >= 6
+                    ? const ClampingScrollPhysics()
+                    : const NeverScrollableScrollPhysics(),
                 padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,

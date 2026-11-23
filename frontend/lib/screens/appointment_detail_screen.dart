@@ -26,6 +26,8 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
   int? appointmentId;
   bool initialized = false;
   bool _isLeaving = false;
+  bool _showPreSharingNotice = false;
+  bool _preSharingNoticeShown = false;
 
   @override
   void didChangeDependencies() {
@@ -35,10 +37,83 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
 
     final args = ModalRoute.of(context)?.settings.arguments;
 
-    if (args is int) {
-      appointmentId = args;
-      detailFuture = EtaApiService.getAppointmentDetail(args);
+    final id = args is int
+        ? args
+        : args is Map && args['appointmentId'] is int
+        ? args['appointmentId'] as int
+        : null;
+
+    _showPreSharingNotice = args is Map && args['showPreSharingNotice'] == true;
+
+    if (id != null) {
+      appointmentId = id;
+      detailFuture = EtaApiService.getAppointmentDetail(id);
     }
+  }
+
+  Future<void> _showPreSharingDialog() async {
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: const Color(0x990D2535),
+      builder: (dialogContext) => Dialog(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 28),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircleAvatar(
+                radius: 29,
+                backgroundColor: Color(0xFFE6F5FB),
+                child: Icon(Icons.schedule_rounded, color: accent, size: 32),
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                '아직 위치 공유 시간이 아니에요',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 19,
+                  fontWeight: FontWeight.w700,
+                  color: navy,
+                ),
+              ),
+              const SizedBox(height: 14),
+              const Text(
+                '위치 공유가 시작되면 친구들의 실시간 위치를 '
+                '확인할 수 있어요.\n'
+                '시작 시간까지 조금만 기다려 주세요.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 14, height: 1.6, color: gray),
+              ),
+              const SizedBox(height: 26),
+              SizedBox(
+                width: double.infinity,
+                height: 58,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: blue,
+                    foregroundColor: navy,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                  child: const Text(
+                    '닫기',
+                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   void reload() {
@@ -610,6 +685,20 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
                             radarStart != null &&
                             status != 'COMPLETED' &&
                             status != 'CANCELLED';
+
+                        if (_showPreSharingNotice &&
+                            !_preSharingNoticeShown &&
+                            showCountdown &&
+                            radarStart.isAfter(DateTime.now())) {
+                          _preSharingNoticeShown = true;
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            if (!mounted ||
+                                ModalRoute.of(context)?.isCurrent != true) {
+                              return;
+                            }
+                            _showPreSharingDialog();
+                          });
+                        }
 
                         return Column(
                           children: [

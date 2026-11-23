@@ -11,10 +11,12 @@ class AppointmentResultScreen extends StatefulWidget {
     super.key,
     required this.appointmentId,
     this.fromRadar = false,
+    this.fromPastAppointments = false,
   });
 
   final int appointmentId;
   final bool fromRadar;
+  final bool fromPastAppointments;
 
   @override
   State<AppointmentResultScreen> createState() =>
@@ -99,6 +101,12 @@ class _AppointmentResultScreenState extends State<AppointmentResultScreen> {
   void _retry() => setState(_reload);
 
   void _goToAppointmentList() {
+    // 지난 약속에서 진입했다면 해당 목록으로 돌아간다.
+    if (widget.fromPastAppointments) {
+      Navigator.of(context).pop();
+      return;
+    }
+
     // 현재 스택에 홈 화면이 있다면 기존 탭 상태를 유지하며 복귀한다.
     // 홈이 없다면 초기 온보딩 화면으로 잘못 돌아가지 않도록 새 홈을 연다.
     final navigator = Navigator.of(context);
@@ -142,7 +150,7 @@ class _AppointmentResultScreenState extends State<AppointmentResultScreen> {
         ),
         child: Text(
           text,
-          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
         ),
       ),
     );
@@ -346,7 +354,7 @@ class _AppointmentResultScreenState extends State<AppointmentResultScreen> {
               Text(
                 statusLabel,
                 style: TextStyle(
-                  color: isLate ? _red : _accent,
+                  color: (isLate || statusLabel == '미도착') ? _red : _accent,
                   fontSize: 16,
                   fontWeight: FontWeight.w700,
                 ),
@@ -525,48 +533,55 @@ class _AppointmentResultScreenState extends State<AppointmentResultScreen> {
     required String buttonLabel,
     required VoidCallback onPressed,
   }) {
-    return Center(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.fromLTRB(18, 24, 18, 24),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(22),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 58,
-                height: 58,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: _pale,
-                  borderRadius: BorderRadius.circular(18),
+    return Transform.translate(
+      offset: const Offset(0, -90),
+      child: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(18, 24, 18, 24),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(22),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 58,
+                  height: 58,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: _pale,
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  child: Icon(icon, color: _accent, size: 26),
                 ),
-                child: Icon(icon, color: _accent, size: 26),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                title,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: _navy,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
+                const SizedBox(height: 16),
+                Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: _navy,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 14),
-              Text(
-                description,
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: _gray, fontSize: 13, height: 1.5),
-              ),
-              const SizedBox(height: 16),
-              _primaryButton(buttonLabel, onPressed),
-            ],
+                const SizedBox(height: 14),
+                Text(
+                  description,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: _gray,
+                    fontSize: 13,
+                    height: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                _primaryButton(buttonLabel, onPressed),
+              ],
+            ),
           ),
         ),
       ),
@@ -644,23 +659,31 @@ class _AppointmentResultScreenState extends State<AppointmentResultScreen> {
           child: Column(
             children: [
               const SizedBox(height: 22),
-              Row(
-                children: [
-                  IconButton(
-                    onPressed: () => Navigator.of(context).maybePop(),
-                    icon: const Icon(Icons.arrow_back_ios_new, size: 19),
-                    color: _accent,
-                  ),
-                  const SizedBox(width: 8),
-                  const Text(
-                    '지각 정산',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 20,
-                      color: _navy,
+              Transform.translate(
+                offset: const Offset(-12, 0),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 48,
+                      height: 48,
+                      child: IconButton(
+                        padding: EdgeInsets.zero,
+                        onPressed: () => Navigator.of(context).maybePop(),
+                        icon: const Icon(Icons.arrow_back_ios_new),
+                        iconSize: 20,
+                        color: const Color(0xFF1685B5),
+                      ),
                     ),
-                  ),
-                ],
+                    const Text(
+                      '지각 정산',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
+                        color: _navy,
+                      ),
+                    ),
+                  ],
+                ),
               ),
               const SizedBox(height: 28),
               Expanded(

@@ -116,7 +116,11 @@ class _FigmaHomeTabState extends State<_FigmaHomeTab> {
     }
 
     if (appointment['isLocationSharingActive'] != true) {
-      await Navigator.pushNamed(context, '/appointment-waiting', arguments: id);
+      await Navigator.pushNamed(
+        context,
+        '/appointment-waiting',
+        arguments: {'appointmentId': id, 'showPreSharingNotice': true},
+      );
       if (mounted) _reload();
       return;
     }
@@ -407,67 +411,70 @@ class _FigmaHomeTabState extends State<_FigmaHomeTab> {
   }
 
   Widget _emptyContent() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Column(
-        children: [
-          Container(
-            width: 54,
-            height: 54,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: _card,
-              borderRadius: BorderRadius.circular(16),
+    return Transform.translate(
+      offset: const Offset(0, 24),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Column(
+          children: [
+            Container(
+              width: 54,
+              height: 54,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: _card,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: const Icon(Icons.remove, color: _accent, size: 27),
             ),
-            child: const Icon(Icons.remove, color: _accent, size: 27),
-          ),
-          const SizedBox(height: 20),
-          const Text(
-            '지금 확인할 약속이 없어요',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 17,
-              fontWeight: FontWeight.w700,
-              color: _navy,
+            const SizedBox(height: 20),
+            const Text(
+              '지금 확인할 약속이 없어요',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
+                color: _navy,
+              ),
             ),
-          ),
-          const SizedBox(height: 12),
-          const Text(
-            '예정된 약속이나 지난 약속은\n'
-            '약속 탭에서 확인할 수 있어요.',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 12,
-              height: 1.5,
-              color: Color(0xFF718696),
+            const SizedBox(height: 12),
+            const Text(
+              '예정된 약속이나 지난 약속은\n'
+              '약속 탭에서 확인할 수 있어요.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 12,
+                height: 1.5,
+                color: Color(0xFF718696),
+              ),
             ),
-          ),
-          const SizedBox(height: 22),
-          SizedBox(
-            width: double.infinity,
-            height: 44,
-            child: ElevatedButton(
-              onPressed: widget.onAllAppointments,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _blue,
-                foregroundColor: _navy,
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+            const SizedBox(height: 22),
+            SizedBox(
+              width: double.infinity,
+              height: 44,
+              child: ElevatedButton(
+                onPressed: widget.onAllAppointments,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _blue,
+                  foregroundColor: _navy,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: const Text(
+                  '전체 약속 보기',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
                 ),
               ),
-              child: const Text(
-                '전체 약속 보기',
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
-              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

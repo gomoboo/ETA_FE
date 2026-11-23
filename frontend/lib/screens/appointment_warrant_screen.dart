@@ -168,7 +168,7 @@ class _AppointmentWarrantScreenState extends State<AppointmentWarrantScreen> {
   Widget _warrantCard(WarrantDisplayData warrant) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(26, 20, 26, 18),
+      padding: const EdgeInsets.fromLTRB(26, 20, 26, 30),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(26),
@@ -221,22 +221,16 @@ class _AppointmentWarrantScreenState extends State<AppointmentWarrantScreen> {
   }
 
   void _nextWarrant() {
-    if (widget.warrants.length <= 1) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('다른 영장이 없어요.')));
-      return;
-    }
+    if (widget.warrants.length <= 1) return;
 
     setState(() {
       _currentIndex = (_currentIndex + 1) % widget.warrants.length;
     });
   }
 
-
   Future<void> _saveWarrantImage() async {
     try {
-      final renderObject =
-          _warrantCardKey.currentContext?.findRenderObject();
+      final renderObject = _warrantCardKey.currentContext?.findRenderObject();
 
       if (renderObject is! RenderRepaintBoundary) {
         throw StateError('영장 카드 영역을 찾을 수 없습니다.');
@@ -245,9 +239,7 @@ class _AppointmentWarrantScreenState extends State<AppointmentWarrantScreen> {
       final image = await renderObject.toImage(pixelRatio: 2.0);
 
       try {
-        final byteData = await image.toByteData(
-          format: ui.ImageByteFormat.png,
-        );
+        final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
 
         if (byteData == null) {
           throw StateError('이미지를 생성하지 못했습니다.');
@@ -265,16 +257,13 @@ class _AppointmentWarrantScreenState extends State<AppointmentWarrantScreen> {
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('영장 이미지가 사진 앱에 저장됐어요.')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('영장 이미지가 사진 앱에 저장됐어요.')));
     } catch (error) {
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('이미지를 저장하지 못했어요. 사진 접근 권한을 확인해 주세요.'),
-        ),
+        const SnackBar(content: Text('이미지를 저장하지 못했어요. 사진 접근 권한을 확인해 주세요.')),
       );
       debugPrint('영장 이미지 저장 오류: $error');
     }
@@ -284,9 +273,8 @@ class _AppointmentWarrantScreenState extends State<AppointmentWarrantScreen> {
     final link = widget.warrants[_currentIndex].shareLinkUrl?.trim();
 
     if (link == null || link.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('이 영장에 제공된 공유 링크가 없어요.')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('이 영장에 제공된 공유 링크가 없어요.')));
       return;
     }
 
@@ -295,24 +283,21 @@ class _AppointmentWarrantScreenState extends State<AppointmentWarrantScreen> {
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('영장 링크를 복사했어요.')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('영장 링크를 복사했어요.')));
     } catch (error) {
       debugPrint('영장 링크 복사 실패: $error');
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('링크를 복사하지 못했어요.')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('링크를 복사하지 못했어요.')));
     }
   }
 
   Future<void> _shareWarrantImage() async {
     try {
-      final renderObject =
-          _warrantCardKey.currentContext?.findRenderObject();
+      final renderObject = _warrantCardKey.currentContext?.findRenderObject();
 
       if (renderObject is! RenderRepaintBoundary) {
         throw StateError('영장 카드 영역을 찾을 수 없습니다.');
@@ -323,9 +308,7 @@ class _AppointmentWarrantScreenState extends State<AppointmentWarrantScreen> {
       late final Uint8List bytes;
 
       try {
-        final byteData = await image.toByteData(
-          format: ui.ImageByteFormat.png,
-        );
+        final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
 
         if (byteData == null) {
           throw StateError('영장 이미지를 생성하지 못했습니다.');
@@ -340,12 +323,7 @@ class _AppointmentWarrantScreenState extends State<AppointmentWarrantScreen> {
 
       await SharePlus.instance.share(
         ShareParams(
-          files: [
-            XFile.fromData(
-              bytes,
-              mimeType: 'image/png',
-            ),
-          ],
+          files: [XFile.fromData(bytes, mimeType: 'image/png')],
           fileNameOverrides: ['ETA_Warrant.png'],
         ),
       );
@@ -354,11 +332,8 @@ class _AppointmentWarrantScreenState extends State<AppointmentWarrantScreen> {
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('영장 이미지를 공유하지 못했어요.'),
-        ),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('영장 이미지를 공유하지 못했어요.')));
     }
   }
 
@@ -374,18 +349,14 @@ class _AppointmentWarrantScreenState extends State<AppointmentWarrantScreen> {
               onTap();
               return;
             }
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(message)),
-            );
+            ScaffoldMessenger.of(context)
+                .showSnackBar(SnackBar(content: Text(message)));
           },
           style: OutlinedButton.styleFrom(
             backgroundColor: Colors.white,
             foregroundColor: _navy,
             padding: const EdgeInsets.symmetric(horizontal: 18),
-            side: const BorderSide(
-              color: Color(0xFFD8E9F2),
-              width: 1.3,
-            ),
+            side: const BorderSide(color: Color(0xFFD8E9F2), width: 1.3),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(17),
             ),
@@ -423,9 +394,7 @@ class _AppointmentWarrantScreenState extends State<AppointmentWarrantScreen> {
           height: MediaQuery.sizeOf(sheetContext).height * 0.46,
           decoration: const BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.vertical(
-              top: Radius.circular(30),
-            ),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
           ),
           child: SafeArea(
             top: false,
@@ -494,61 +463,80 @@ class _AppointmentWarrantScreenState extends State<AppointmentWarrantScreen> {
 
     return Scaffold(
       backgroundColor: _background,
-      appBar: AppBar(
-        backgroundColor: _background,
-        foregroundColor: _navy,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        centerTitle: false,
-        toolbarHeight: 72,
-        titleSpacing: 0,
-        leading: IconButton(
-          onPressed: () => Navigator.of(context).maybePop(),
-          icon: const Icon(Icons.arrow_back_ios_new, size: 20, color: _blue),
-        ),
-        title: const Text(
-          '지각 체포 영장',
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.w700,
-            color: _navy,
-          ),
-        ),
-      ),
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 26, 24, 20),
+          padding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
           child: Column(
             children: [
-              Expanded(
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    return SingleChildScrollView(
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(
-                          minHeight: constraints.maxHeight,
-                        ),
-                        child: RepaintBoundary(
-                          key: _warrantCardKey,
-                          child: _warrantCard(warrant),
-                        ),
+              const SizedBox(height: 22),
+              Transform.translate(
+                offset: const Offset(-12, 0),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 48,
+                      height: 48,
+                      child: IconButton(
+                        padding: EdgeInsets.zero,
+                        onPressed: () => Navigator.of(context).maybePop(),
+                        icon: const Icon(Icons.arrow_back_ios_new),
+                        iconSize: 20,
+                        color: const Color(0xFF1685B5),
                       ),
-                    );
-                  },
+                    ),
+                    const Text(
+                      '지각 체포 영장',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
+                        color: _navy,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 12),
-              TextButton(
-                onPressed: _nextWarrant,
-                child: const Text(
-                  '다른 영장 보기',
-                  style: TextStyle(fontSize: 15, color: _blue),
+              const SizedBox(height: 28),
+              Expanded(
+                child: SingleChildScrollView(
+                  child: Column(
+                    children: [
+                      RepaintBoundary(
+                        key: _warrantCardKey,
+                        child: _warrantCard(warrant),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        '${_currentIndex + 1}/${widget.warrants.length}',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: _gray,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      if (widget.warrants.length > 1)
+                        TextButton(
+                          onPressed: _nextWarrant,
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 0,
+                            ),
+                            minimumSize: const Size(0, 36),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          child: const Text(
+                            '다른 영장 보기',
+                            style: TextStyle(fontSize: 15, color: _blue),
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
               ),
               const SizedBox(height: 26),
               SizedBox(
                 width: double.infinity,
-                height: 56,
+                height: 52,
                 child: ElevatedButton(
                   onPressed: _showShareSheet,
                   style: ElevatedButton.styleFrom(
@@ -556,12 +544,12 @@ class _AppointmentWarrantScreenState extends State<AppointmentWarrantScreen> {
                     foregroundColor: _navy,
                     elevation: 0,
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(17),
+                      borderRadius: BorderRadius.circular(14),
                     ),
                   ),
                   child: const Text(
                     '이 영장 공유하기',
-                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
                   ),
                 ),
               ),

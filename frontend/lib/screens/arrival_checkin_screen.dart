@@ -6,6 +6,7 @@ class ArrivalCheckinScreen extends StatelessWidget {
   const ArrivalCheckinScreen({
     super.key,
     required this.status,
+    this.isMyArrival = false,
     required this.nickname,
     required this.placeName,
     required this.meetAt,
@@ -16,6 +17,7 @@ class ArrivalCheckinScreen extends StatelessWidget {
   });
 
   final ArrivalCheckinStatus status;
+  final bool isMyArrival;
   final String nickname;
   final String placeName;
   final DateTime meetAt;
@@ -45,7 +47,7 @@ class ArrivalCheckinScreen extends StatelessWidget {
       case ArrivalCheckinStatus.early:
       case ArrivalCheckinStatus.onTime:
       case ArrivalCheckinStatus.late:
-        return '$nickname님이 도착했어요!';
+        return isMyArrival ? '약속 장소에 도착했습니다!' : '$nickname님이 도착했어요!';
       case ArrivalCheckinStatus.checking:
         return '도착을 확인하고 있어요';
       case ArrivalCheckinStatus.disconnected:

@@ -1,9 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../services/eta_api_service.dart';
+import '../services/eta_appointment_tracking_service.dart';
 import '../services/eta_notification_service.dart';
 import 'invited_appointment_screen.dart';
+import 'past_appointments_screen.dart';
 
 class AppointmentsTab extends StatefulWidget {
   const AppointmentsTab({super.key});
@@ -59,6 +63,15 @@ class _AppointmentsTabState extends State<AppointmentsTab> {
         if (upcoming is List) ...upcoming,
       ];
 
+      // 조회한 약속을 저장해 종료 이후에도 ID를 확인할 수 있게 한다.
+      try {
+        await EtaAppointmentTrackingService.rememberAppointments(
+          appointments.whereType<Map<String, dynamic>>(),
+        );
+      } catch (error) {
+        debugPrint('약속 추적 정보 저장 실패: $error');
+      }
+
       for (final item in appointments) {
         if (item is! Map) continue;
         if (item['isLocationSharingActive'] != true) continue;
@@ -81,6 +94,15 @@ class _AppointmentsTabState extends State<AppointmentsTab> {
     } catch (error) {
       debugPrint('위치 공유 시작 알림 저장 실패: $error');
     }
+
+    // 기존 약속의 정산 결과를 별도로 확인한다.
+    // 확인 중에도 약속 목록은 정상 표시한다.
+    unawaited(
+      EtaAppointmentTrackingService.checkSettlementNotifications(data)
+          .catchError((Object error) {
+            debugPrint('정산 알림 확인 실패: $error');
+          }),
+    );
 
     return data;
   }
@@ -258,7 +280,7 @@ class _AppointmentsTabState extends State<AppointmentsTab> {
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
@@ -274,7 +296,7 @@ class _AppointmentsTabState extends State<AppointmentsTab> {
               color: navy,
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 9),
           Row(
             children: [
               Expanded(
@@ -335,7 +357,7 @@ class _AppointmentsTabState extends State<AppointmentsTab> {
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 9),
           Text(
             codeError ??
                 (checkingCode || joining
@@ -353,7 +375,7 @@ class _AppointmentsTabState extends State<AppointmentsTab> {
 
   Widget sectionTitle(String text) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.only(bottom: 10),
       child: Text(
         text,
         style: const TextStyle(
@@ -371,8 +393,8 @@ class _AppointmentsTabState extends State<AppointmentsTab> {
 
     return Container(
       width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.all(18),
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: pale,
         borderRadius: BorderRadius.circular(20),
@@ -388,13 +410,13 @@ class _AppointmentsTabState extends State<AppointmentsTab> {
               color: navy,
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           Text(
             "${formatDate(item['meetAt'])} · "
             "${item['targetPlaceName'] ?? ''}",
             style: const TextStyle(fontSize: 12, color: gray),
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 10),
           Text(
             item['isLocationSharingActive'] == true ? '위치 공유 중' : '위치 공유 대기 중',
             style: const TextStyle(
@@ -403,12 +425,12 @@ class _AppointmentsTabState extends State<AppointmentsTab> {
               color: accent,
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           Text(
             friends == 0 ? '아직 참여한 친구가 없어요' : '친구 $friends명이 함께하고 있어요',
             style: const TextStyle(fontSize: 12, color: accent),
           ),
-          const SizedBox(height: 15),
+          const SizedBox(height: 10),
           SizedBox(
             width: double.infinity,
             height: 48,
@@ -437,7 +459,7 @@ class _AppointmentsTabState extends State<AppointmentsTab> {
     final count = toId(item['participantCount']) ?? 0;
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(bottom: 9),
       child: Material(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
@@ -446,7 +468,7 @@ class _AppointmentsTabState extends State<AppointmentsTab> {
           onTap: () => openAppointment(item),
           child: Container(
             width: double.infinity,
-            padding: const EdgeInsets.all(18),
+            padding: const EdgeInsets.all(14),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -458,7 +480,7 @@ class _AppointmentsTabState extends State<AppointmentsTab> {
                     color: navy,
                   ),
                 ),
-                const SizedBox(height: 9),
+                const SizedBox(height: 6),
                 Text(
                   "${formatDate(item['meetAt'])} · 참가자 $count명",
                   style: const TextStyle(fontSize: 12, color: gray),
@@ -685,7 +707,7 @@ class _AppointmentsTabState extends State<AppointmentsTab> {
             if (active.isNotEmpty) ...[
               sectionTitle('진행 중인 약속'),
               for (final item in active) activeCard(item),
-              const SizedBox(height: 22),
+              const SizedBox(height: 10),
             ],
             sectionTitle('예정된 약속'),
             if (upcoming.isEmpty)
@@ -707,48 +729,83 @@ class _AppointmentsTabState extends State<AppointmentsTab> {
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(24, 24, 24, 110),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        FutureBuilder<Map<String, dynamic>>(
+          future: appointmentsFuture,
+          builder: (context, snapshot) {
+            final upcoming = snapshot.data?['upcomingAppointments'];
+            final active = snapshot.data?['activeAppointments'];
+
+            final upcomingCount = upcoming is List ? upcoming.length : 0;
+            final activeCount = active is List ? active.length : 0;
+
+            return SingleChildScrollView(
+              physics: upcomingCount >= 2 || activeCount >= 2
+                  ? const BouncingScrollPhysics()
+                  : const NeverScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(24, 24, 24, 110),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        '약속',
+                        style: TextStyle(
+                          fontSize: 21,
+                          fontWeight: FontWeight.w700,
+                          color: navy,
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () =>
+                            Navigator.pushNamed(context, '/notifications'),
+                        icon: const Icon(
+                          Icons.notifications_none_rounded,
+                          size: 30,
+                          color: accent,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
                   const Text(
-                    '약속',
+                    '나의 약속',
                     style: TextStyle(
-                      fontSize: 21,
+                      fontSize: 24,
                       fontWeight: FontWeight.w700,
                       color: navy,
                     ),
                   ),
-                  IconButton(
-                    onPressed: () =>
-                        Navigator.pushNamed(context, '/notifications'),
-                    icon: const Icon(
-                      Icons.notifications_none_rounded,
-                      size: 30,
-                      color: accent,
+                  const SizedBox(height: 16),
+                  inviteCard(),
+                  const SizedBox(height: 18),
+                  appointmentList(),
+                  const SizedBox(height: 18),
+                  Center(
+                    child: TextButton.icon(
+                      onPressed: () {
+                        Navigator.of(context).push<void>(
+                          MaterialPageRoute(
+                            builder: (_) => const PastAppointmentsScreen(),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.history_rounded, size: 19),
+                      label: const Text('지난 약속 보기'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: accent,
+                        padding: const EdgeInsets.symmetric(vertical: 15),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 34),
-              const Text(
-                '나의 약속',
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.w700,
-                  color: navy,
-                ),
-              ),
-              const SizedBox(height: 22),
-              inviteCard(),
-              const SizedBox(height: 28),
-              appointmentList(),
-            ],
-          ),
+            );
+          },
         ),
         Positioned(
           right: 24,

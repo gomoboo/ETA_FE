@@ -15,10 +15,27 @@ class EtaNotificationService {
       final decoded = jsonDecode(raw);
       if (decoded is! List) return [];
 
+      final now = DateTime.now();
+      final cutoff = now.subtract(const Duration(hours: 24));
+
       final items = decoded
           .whereType<Map>()
           .map((item) => Map<String, dynamic>.from(item))
+          .where((item) {
+            final createdAt = DateTime.tryParse(
+              item['createdAt']?.toString() ?? '',
+            );
+
+            return createdAt != null &&
+                !createdAt.isBefore(cutoff) &&
+                !createdAt.isAfter(now);
+          })
           .toList();
+
+      // 만료된 알림은 화면에서 숨길 뿐 아니라 저장소에서도 제거한다.
+      if (items.length != decoded.length) {
+        await prefs.setString(_storageKey, jsonEncode(items));
+      }
 
       items.sort((a, b) {
         final aTime = DateTime.tryParse(a['createdAt']?.toString() ?? '');

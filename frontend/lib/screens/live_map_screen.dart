@@ -370,21 +370,31 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
       }
 
       if (decoded['type'] == 'checkin:completed') {
+        debugPrint(
+          '[도착 알림 진단] 이벤트 수신: '
+          'appointmentId=$appointmentId, '
+          'myParticipantId=$myParticipantId, '
+          'data=$decoded',
+        );
+
         final arrivedId = decoded['participantId'];
-        if (arrivedId is! int) return;
+        if (arrivedId is! int) {
+          debugPrint('[도착 알림 진단] 참가자 ID 형식 오류: $arrivedId');
+          return;
+        }
 
         // 다른 참가자의 실제 도착 이벤트만 알림에 기록
         if (arrivedId != myParticipantId) {
           try {
-            var detail = _cachedAppointmentDetail;
+            // 서버 도착 이벤트의 닉네임을 우선 사용한다.
+            String? arrivedNickname = decoded['nickname']?.toString().trim();
 
-            // 아직 약속 정보가 로딩되지 않았다면 서버에서 조회
-            detail ??= await EtaApiService.getAppointmentDetail(appointmentId);
+            final cachedDetail = _cachedAppointmentDetail;
+            final participants = cachedDetail?['participants'];
 
-            final participants = detail['participants'];
-            String? arrivedNickname;
-
-            if (participants is List) {
+            // 이벤트에 닉네임이 없으면 기존 참가자 정보에서 찾는다.
+            if ((arrivedNickname == null || arrivedNickname.isEmpty) &&
+                participants is List) {
               for (final participant in participants) {
                 if (participant is Map &&
                     participant['participantId'] == arrivedId) {
@@ -394,7 +404,41 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
               }
             }
 
-            final appointmentTitle = detail['title']?.toString().trim() ?? '';
+            var appointmentTitle = decoded['appointmentTitle']
+                ?.toString()
+                .trim();
+
+            if (appointmentTitle == null || appointmentTitle.isEmpty) {
+              appointmentTitle = cachedDetail?['title']?.toString().trim();
+            }
+
+            if (appointmentTitle == null || appointmentTitle.isEmpty) {
+              appointmentTitle = _radarAppointmentTitle;
+            }
+
+            // 이벤트와 캐시에 정보가 부족할 때만 상세 정보를 조회한다.
+            if (arrivedNickname == null || arrivedNickname.isEmpty) {
+              final detail = await EtaApiService.getAppointmentDetail(
+                appointmentId,
+              );
+              final detailParticipants = detail['participants'];
+
+              if (detailParticipants is List) {
+                for (final participant in detailParticipants) {
+                  if (participant is Map &&
+                      participant['participantId'] == arrivedId) {
+                    arrivedNickname = participant['nickname']
+                        ?.toString()
+                        .trim();
+                    break;
+                  }
+                }
+              }
+
+              if (appointmentTitle.isEmpty) {
+                appointmentTitle = detail['title']?.toString().trim() ?? '';
+              }
+            }
 
             if (arrivedNickname != null &&
                 arrivedNickname.isNotEmpty &&
@@ -421,7 +465,11 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
           debugPrint('ETA 체크인: 본인 도착 확정, GPS 수집 중단');
         }
 
-        await _openArrivalResult(decoded, appointmentId);
+        await _openArrivalResult(
+          decoded,
+          appointmentId,
+          isMyArrival: arrivedId == myParticipantId,
+        );
         return;
       }
 
@@ -703,8 +751,9 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
 
   Future<void> _openArrivalResult(
     Map<String, dynamic> event,
-    int appointmentId,
-  ) async {
+    int appointmentId, {
+    required bool isMyArrival,
+  }) async {
     final rawStatus = event['arrivalStatus']?.toString();
 
     final ArrivalCheckinStatus? status = switch (rawStatus) {
@@ -766,6 +815,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
         MaterialPageRoute(
           builder: (_) => ArrivalCheckinScreen(
             status: status,
+            isMyArrival: isMyArrival,
             nickname: nickname,
             placeName: placeName,
             meetAt: meetAt,
@@ -1750,7 +1800,13 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
               ),
             ),
 
-            if (showFriendSheet && !isLoadingRadar)
+            if (showFriendSheet &&
+                !isLoadingRadar &&
+                _socketService.isConnected &&
+                _activeAppointmentId != null &&
+                _pokeTargets().any(
+                  (target) => _canPoke(_activeAppointmentId!, target.id),
+                ))
               AnimatedPositioned(
                 duration: _isDragging
                     ? Duration.zero

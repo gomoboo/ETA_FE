@@ -2119,37 +2119,38 @@ class _AppointmentCreateScreenState extends State<AppointmentCreateScreen> {
         body: SafeArea(
           child: Column(
             children: [
-              // 상단 헤더
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 22, 24, 12),
-                child: Row(
-                  children: [
-                    InkWell(
-                      onTap: _confirmCancelCreate,
-                      borderRadius: BorderRadius.circular(20),
-                      child: const Padding(
-                        padding: EdgeInsets.all(2),
-                        child: Icon(
-                          Icons.arrow_back_ios_new_rounded,
-                          size: 18,
-                          color: _blue,
+              // 공통 헤더: 지난 약속 화면 기준
+              const SizedBox(height: 0),
+              Transform.translate(
+                offset: const Offset(0, 8),
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 12, right: 24),
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: 48,
+                        height: 48,
+                        child: IconButton(
+                          padding: EdgeInsets.zero,
+                          onPressed: _confirmCancelCreate,
+                          icon: const Icon(Icons.arrow_back_ios_new),
+                          iconSize: 20,
+                          color: const Color(0xFF1685B5),
                         ),
                       ),
-                    ),
-
-                    const SizedBox(width: 12),
-
-                    const Text(
-                      '약속 만들기',
-                      style: TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w700,
-                        color: _navy,
+                      const Text(
+                        '약속 만들기',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                          color: _navy,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
+              const SizedBox(height: 12),
 
               Expanded(
                 child: _isCreating
@@ -2186,50 +2187,55 @@ class _AppointmentCreateScreenState extends State<AppointmentCreateScreen> {
 
                             const SizedBox(height: 8),
 
-                            TextField(
-                              controller: _titleController,
-                              onChanged: (_) {
-                                if (_showValidationErrors) {
-                                  setState(() {});
-                                }
-                              },
-                              style: const TextStyle(
-                                fontSize: 13,
-                                color: _navy,
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 4,
                               ),
-                              decoration: _inputDecoration().copyWith(
-                                constraints: const BoxConstraints.tightFor(
-                                  height: 51,
+                              child: TextField(
+                                controller: _titleController,
+                                onChanged: (_) {
+                                  if (_showValidationErrors) {
+                                    setState(() {});
+                                  }
+                                },
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  color: _navy,
                                 ),
-                                isDense: true,
-                                hintText: '약속 이름을 입력해 주세요',
-                                hintStyle: const TextStyle(
-                                  fontSize: 13,
-                                  color: _gray,
-                                ),
-                                enabledBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(18),
-                                  borderSide: BorderSide(
-                                    color: _isTitleInvalid
-                                        ? const Color(0xFF1685B5)
-                                        : _border,
-                                    width: _isTitleInvalid ? 1.5 : 1,
+                                decoration: _inputDecoration().copyWith(
+                                  constraints: const BoxConstraints.tightFor(
+                                    height: 51,
                                   ),
-                                ),
-                                focusedBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(18),
-                                  borderSide: BorderSide(
-                                    color: _isTitleInvalid
-                                        ? const Color(0xFF1685B5)
-                                        : _blue,
-                                    width: 1.5,
+                                  isDense: true,
+                                  hintText: '약속 이름을 입력해 주세요',
+                                  hintStyle: const TextStyle(
+                                    fontSize: 14,
+                                    color: _gray,
+                                  ),
+                                  enabledBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(18),
+                                    borderSide: BorderSide(
+                                      color: _isTitleInvalid
+                                          ? const Color(0xFF1685B5)
+                                          : _border,
+                                      width: _isTitleInvalid ? 1.5 : 1,
+                                    ),
+                                  ),
+                                  focusedBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(18),
+                                    borderSide: BorderSide(
+                                      color: _isTitleInvalid
+                                          ? const Color(0xFF1685B5)
+                                          : _blue,
+                                      width: 1.5,
+                                    ),
                                   ),
                                 ),
                               ),
                             ),
 
                             SizedBox(
-                              height: 26 + extraGap * 0.4,
+                              height: 18 + extraGap * 0.4,
                               child: Padding(
                                 padding: const EdgeInsets.only(top: 4),
                                 child: Text(
@@ -2247,36 +2253,43 @@ class _AppointmentCreateScreenState extends State<AppointmentCreateScreen> {
 
                             const SizedBox(height: 8),
 
-                            _tapField(
-                              hasError: _isPlaceInvalid,
-                              icon: Icons.search_rounded,
-                              text: _selectedPlace?.name ?? '장소 검색',
-                              textColor: _selectedPlace == null ? _gray : _navy,
-                              trailing: const Icon(
-                                Icons.location_on_outlined,
-                                size: 21,
-                                color: _blue,
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 4,
                               ),
-                              onTap: () async {
-                                final result = await Navigator.of(context)
-                                    .push<PlaceResult>(
-                                      MaterialPageRoute(
-                                        builder: (context) =>
-                                            const PlaceSearchScreen(),
-                                      ),
-                                    );
+                              child: _tapField(
+                                hasError: _isPlaceInvalid,
+                                icon: Icons.search_rounded,
+                                text: _selectedPlace?.name ?? '장소 검색',
+                                textColor: _selectedPlace == null
+                                    ? _gray
+                                    : _navy,
+                                trailing: const Icon(
+                                  Icons.location_on_outlined,
+                                  size: 21,
+                                  color: _blue,
+                                ),
+                                onTap: () async {
+                                  final result = await Navigator.of(context)
+                                      .push<PlaceResult>(
+                                        MaterialPageRoute(
+                                          builder: (context) =>
+                                              const PlaceSearchScreen(),
+                                        ),
+                                      );
 
-                                if (result != null) {
-                                  setState(() {
-                                    _selectedPlace = result;
-                                  });
-                                }
-                              },
+                                  if (result != null) {
+                                    setState(() {
+                                      _selectedPlace = result;
+                                    });
+                                  }
+                                },
+                              ),
                             ),
 
                             // 약속 장소 미입력 경고
                             SizedBox(
-                              height: 26 + extraGap * 0.4,
+                              height: 18 + extraGap * 0.4,
                               child: Padding(
                                 padding: const EdgeInsets.only(top: 4),
                                 child: Text(
@@ -2294,27 +2307,32 @@ class _AppointmentCreateScreenState extends State<AppointmentCreateScreen> {
 
                             const SizedBox(height: 8),
 
-                            _tapField(
-                              hasError: _isDateTimeInvalid,
-                              text: _selectedAppointmentDateTime == null
-                                  ? '날짜 설정 / 시간 설정'
-                                  : _formatAppointmentDateTime(
-                                      _selectedAppointmentDateTime!,
-                                    ),
-                              textColor: _selectedAppointmentDateTime == null
-                                  ? _gray
-                                  : _navy,
-                              trailing: const Icon(
-                                Icons.calendar_today_outlined,
-                                size: 18,
-                                color: _gray,
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 4,
                               ),
-                              onTap: _showDateTimeSheet,
+                              child: _tapField(
+                                hasError: _isDateTimeInvalid,
+                                text: _selectedAppointmentDateTime == null
+                                    ? '날짜 설정 / 시간 설정'
+                                    : _formatAppointmentDateTime(
+                                        _selectedAppointmentDateTime!,
+                                      ),
+                                textColor: _selectedAppointmentDateTime == null
+                                    ? _gray
+                                    : _navy,
+                                trailing: const Icon(
+                                  Icons.calendar_today_outlined,
+                                  size: 18,
+                                  color: _gray,
+                                ),
+                                onTap: _showDateTimeSheet,
+                              ),
                             ),
 
                             // 날짜·시간 미입력 경고
                             SizedBox(
-                              height: 26 + extraGap * 0.4,
+                              height: 18 + extraGap * 0.4,
                               child: Padding(
                                 padding: const EdgeInsets.only(top: 4),
                                 child: Text(
@@ -2334,19 +2352,24 @@ class _AppointmentCreateScreenState extends State<AppointmentCreateScreen> {
 
                             const SizedBox(height: 8),
 
-                            _tapField(
-                              height: 35,
-                              radius: 14,
-                              text: _locationShareMinutes == 60
-                                  ? '약속 1시간 전'
-                                  : '약속 $_locationShareMinutes분 전',
-                              textColor: _navy,
-                              trailing: const Icon(
-                                Icons.chevron_right_rounded,
-                                size: 19,
-                                color: _gray,
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 4,
                               ),
-                              onTap: _showLocationShareSheet,
+                              child: _tapField(
+                                height: 35,
+                                radius: 14,
+                                text: _locationShareMinutes == 60
+                                    ? '약속 1시간 전'
+                                    : '약속 $_locationShareMinutes분 전',
+                                textColor: _navy,
+                                trailing: const Icon(
+                                  Icons.chevron_right_rounded,
+                                  size: 19,
+                                  color: _gray,
+                                ),
+                                onTap: _showLocationShareSheet,
+                              ),
                             ),
 
                             SizedBox(height: 16 + extraGap),
@@ -2357,50 +2380,55 @@ class _AppointmentCreateScreenState extends State<AppointmentCreateScreen> {
 
                             const SizedBox(height: 9),
 
-                            Row(
-                              children: [
-                                _figmaRuleChoice(
-                                  height: 48,
-                                  radius: 14,
-                                  label: '벌칙',
-                                  selected: _penaltyMode == 'penalty',
-                                  onTap: () {
-                                    setState(() {
-                                      _penaltyMode = 'penalty';
-                                      if (_penaltyOption.isEmpty) {
-                                        _penaltyOption = 'coffee';
-                                      }
-                                    });
-                                  },
-                                ),
-                                const SizedBox(width: 8),
-                                _figmaRuleChoice(
-                                  height: 48,
-                                  radius: 14,
-                                  label: '지각비',
-                                  selected: _penaltyMode == 'lateFee',
-                                  onTap: () {
-                                    setState(() {
-                                      _penaltyMode = 'lateFee';
-                                      if (_lateFeeOption.isEmpty) {
-                                        _lateFeeOption = '1000';
-                                      }
-                                    });
-                                  },
-                                ),
-                                const SizedBox(width: 8),
-                                _figmaRuleChoice(
-                                  height: 48,
-                                  radius: 14,
-                                  label: '없음',
-                                  selected: _penaltyMode == 'none',
-                                  onTap: () {
-                                    setState(() {
-                                      _penaltyMode = 'none';
-                                    });
-                                  },
-                                ),
-                              ],
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 4,
+                              ),
+                              child: Row(
+                                children: [
+                                  _figmaRuleChoice(
+                                    height: 40,
+                                    radius: 14,
+                                    label: '벌칙',
+                                    selected: _penaltyMode == 'penalty',
+                                    onTap: () {
+                                      setState(() {
+                                        _penaltyMode = 'penalty';
+                                        if (_penaltyOption.isEmpty) {
+                                          _penaltyOption = 'coffee';
+                                        }
+                                      });
+                                    },
+                                  ),
+                                  const SizedBox(width: 8),
+                                  _figmaRuleChoice(
+                                    height: 40,
+                                    radius: 14,
+                                    label: '지각비',
+                                    selected: _penaltyMode == 'lateFee',
+                                    onTap: () {
+                                      setState(() {
+                                        _penaltyMode = 'lateFee';
+                                        if (_lateFeeOption.isEmpty) {
+                                          _lateFeeOption = '1000';
+                                        }
+                                      });
+                                    },
+                                  ),
+                                  const SizedBox(width: 8),
+                                  _figmaRuleChoice(
+                                    height: 40,
+                                    radius: 14,
+                                    label: '없음',
+                                    selected: _penaltyMode == 'none',
+                                    onTap: () {
+                                      setState(() {
+                                        _penaltyMode = 'none';
+                                      });
+                                    },
+                                  ),
+                                ],
+                              ),
                             ),
 
                             const SizedBox(height: 8),
@@ -2462,7 +2490,7 @@ class _AppointmentCreateScreenState extends State<AppointmentCreateScreen> {
                 ),
               if (!_isCreating)
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
+                  padding: const EdgeInsets.fromLTRB(24, 12, 24, 16),
                   child: SizedBox(
                     width: double.infinity,
                     height: 52,
@@ -2479,7 +2507,7 @@ class _AppointmentCreateScreenState extends State<AppointmentCreateScreen> {
                       child: Text(
                         _isCreating ? '약속을 만들고 있어요' : '약속 만들기',
                         style: const TextStyle(
-                          fontSize: 15,
+                          fontSize: 16,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
@@ -3220,7 +3248,7 @@ class _AppointmentCreateScreenState extends State<AppointmentCreateScreen> {
     return Text(
       text,
       style: const TextStyle(
-        fontSize: 12,
+        fontSize: 16,
         fontWeight: FontWeight.w700,
         color: _navy,
       ),
@@ -3261,7 +3289,7 @@ class _AppointmentCreateScreenState extends State<AppointmentCreateScreen> {
             Expanded(
               child: Text(
                 text,
-                style: TextStyle(fontSize: 12, color: textColor),
+                style: TextStyle(fontSize: 14, color: textColor),
               ),
             ),
 
