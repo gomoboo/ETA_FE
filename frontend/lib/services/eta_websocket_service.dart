@@ -70,6 +70,9 @@ class EtaWebSocketService {
         return;
       }
 
+      // 네트워크 단절로 응답이 없는 연결을 감지한다.
+      socket.pingInterval = const Duration(seconds: 10);
+
       _socket = socket;
 
       _subscription = socket.listen(

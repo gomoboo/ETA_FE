@@ -83,10 +83,6 @@ class EtaAppointmentTrackingService {
 
       if (id == null || currentIds.contains(id)) continue;
 
-      final meetAt = DateTime.tryParse(item['meetAt']?.toString() ?? '');
-
-      if (meetAt == null || meetAt.isAfter(DateTime.now())) continue;
-
       try {
         final settlement = await EtaApiService.getSettlement(id);
 
@@ -137,16 +133,10 @@ class EtaAppointmentTrackingService {
         .map((item) => item['id']?.toString())
         .toSet();
 
-    final now = DateTime.now();
-
     for (final appointment in tracked) {
       final id = int.tryParse(appointment['appointmentId']?.toString() ?? '');
       if (id == null || currentIds.contains(id)) continue;
 
-      final meetAt = DateTime.tryParse(appointment['meetAt']?.toString() ?? '')
-          ?.toLocal();
-
-      if (meetAt == null || meetAt.isAfter(now)) continue;
       if (notifiedIds.contains('settlement:$id')) continue;
 
       try {
@@ -155,13 +145,14 @@ class EtaAppointmentTrackingService {
             ?.toString()
             .toUpperCase();
 
-        // 서버에서 종료가 확정된 경우에만 진행한다.
-        if (status != 'COMPLETED') continue;
+        // 종료 상태가 제공되면 해당 상태를 우선 확인한다.
+        if (status != null && status != 'COMPLETED') continue;
 
         final settlement = await EtaApiService.getSettlement(id);
 
         // 실제 정산 데이터인지 확인한다.
-        if (settlement['participants'] is! List) continue;
+        final participants = settlement['participants'];
+        if (participants is! List || participants.isEmpty) continue;
 
         final title = detail['title']?.toString().trim().isNotEmpty == true
             ? detail['title'].toString().trim()

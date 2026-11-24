@@ -1,3 +1,5 @@
+import '../widgets/eta_notification_icon.dart';
+
 import 'package:flutter/material.dart';
 
 import '../services/eta_api_service.dart';
@@ -14,6 +16,21 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _selectedTab = 0;
+  bool _initialTabRead = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+
+    if (_initialTabRead) return;
+    _initialTabRead = true;
+
+    final argument = ModalRoute.of(context)?.settings.arguments;
+
+    if (argument is int && argument >= 0 && argument <= 2) {
+      _selectedTab = argument;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -500,11 +517,7 @@ class _FigmaHomeTabState extends State<_FigmaHomeTab> {
               ),
               IconButton(
                 onPressed: () => Navigator.pushNamed(context, '/notifications'),
-                icon: const Icon(
-                  Icons.notifications_none_rounded,
-                  size: 30,
-                  color: _accent,
-                ),
+                icon: const EtaNotificationIcon(color: _accent),
               ),
             ],
           ),

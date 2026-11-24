@@ -6,8 +6,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:kakao_map_sdk/kakao_map_sdk.dart';
 
 import '../services/location_tracking_service.dart';
-import '../services/eta_websocket_service.dart';
-import '../services/guest_identity_service.dart';
+import '../services/eta_radar_session.dart';
 import '../services/eta_api_service.dart';
 import '../services/eta_notification_service.dart';
 import 'arrival_checkin_screen.dart';
@@ -141,12 +140,13 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
   // GPS
   // ===============================================================
 
-  final LocationTrackingService _locationTrackingService =
-      LocationTrackingService();
+  EtaRadarSession? _radarSession;
+  StreamSubscription<LocationSample>? _locationSubscription;
+  StreamSubscription<String>? _messageSubscription;
+  StreamSubscription<bool>? _connectionSubscription;
 
   LocationSample? _latestLocation;
 
-  final EtaWebSocketService _socketService = EtaWebSocketService();
   bool _socketStarted = false;
   bool _myArrivalConfirmed = false;
   int? _activeAppointmentId;
@@ -223,8 +223,8 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
   @override
   void initState() {
     super.initState();
+    unawaited(_loadRadarConsent());
 
-    _startLocationTracking();
     _appointmentClockTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (mounted && _cachedAppointmentDetail != null) {
         setState(() {});
@@ -274,48 +274,47 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
     if (_socketStarted) return;
     _socketStarted = true;
     _activeAppointmentId = appointmentId;
+
     unawaited(_loadAppointmentDetail(appointmentId));
 
-    try {
-      final guestUuid = await GuestIdentityService.getOrCreateUuid();
+    final session = EtaRadarSession.getOrCreate(
+      appointmentId: appointmentId,
+      participantId: participantId,
+    );
 
+    _radarSession = session;
+    _myArrivalConfirmed = session.hasArrived;
+
+    _locationSubscription = session.locations.listen(_handleSessionLocation);
+
+    _messageSubscription = session.messages.listen((message) {
+      if (!mounted) return;
+      unawaited(_handleRealtimeMessage(message, participantId, appointmentId));
+    });
+
+    _connectionSubscription = session.connections.listen((connected) {
       if (!mounted) return;
 
-      await _socketService.connect(
-        appointmentId: appointmentId,
-        participantId: participantId,
-        guestUuid: guestUuid,
-        onConnected: () {
-          debugPrint('ETA WebSocket: 레이더 연결 성공');
-          if (mounted && _checkingScreenOpen && !_myArrivalConfirmed) {
-            _checkingStatus.value = ArrivalCheckinStatus.checking;
-          }
-        },
-        onMessage: (message) {
-          unawaited(
-            _handleRealtimeMessage(message, participantId, appointmentId),
-          );
-        },
-        onError: (error) {
-          debugPrint('ETA WebSocket 오류: $error');
-          if (mounted && _checkingScreenOpen && !_myArrivalConfirmed) {
-            _checkingStatus.value = ArrivalCheckinStatus.disconnected;
-          }
-        },
-        onDisconnected: () {
-          debugPrint('ETA WebSocket 연결 종료');
-          if (mounted && _checkingScreenOpen && !_myArrivalConfirmed) {
-            _checkingStatus.value = ArrivalCheckinStatus.disconnected;
-          }
-        },
-      );
-    } catch (error) {
-      debugPrint('ETA WebSocket 연결 실패: $error');
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('실시간 연결 실패: $error')));
+      if (_checkingScreenOpen && !_myArrivalConfirmed) {
+        _checkingStatus.value = connected
+            ? ArrivalCheckinStatus.checking
+            : ArrivalCheckinStatus.disconnected;
       }
+
+      setState(() {});
+    });
+
+    final sample = session.latestLocation;
+    if (sample != null) {
+      _handleSessionLocation(sample);
     }
+
+    final mapSync = session.latestMapSync;
+    if (mapSync != null) {
+      unawaited(_handleRealtimeMessage(mapSync, participantId, appointmentId));
+    }
+
+    await session.start();
   }
 
   Future<void> _handleRealtimeMessage(
@@ -461,7 +460,6 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
         if (arrivedId == myParticipantId) {
           _myArrivalConfirmed = true;
           _hiddenArrivalCheckingAppointments.add(appointmentId);
-          _locationTrackingService.stop();
           debugPrint('ETA 체크인: 본인 도착 확정, GPS 수집 중단');
         }
 
@@ -556,8 +554,14 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
         );
       }
 
-      if (mounted && !_hasReceivedMapSync) {
-        setState(() => _hasReceivedMapSync = true);
+      if (mounted) {
+        setState(() {
+          _hasReceivedMapSync = true;
+
+          if ((_radarSession?.sharedFriendCount ?? 0) > 0) {
+            _friendWaitingDismissed = false;
+          }
+        });
       }
     } catch (error) {
       debugPrint('ETA WebSocket 메시지 처리 실패: $error');
@@ -571,6 +575,33 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
   Timer? _appointmentClockTimer;
   bool _isMapReady = false;
   bool _hasReceivedMapSync = false;
+  bool? _locationConsent;
+  bool _friendWaitingDismissed = false;
+
+  Future<void> _loadRadarConsent() async {
+    final granted = await LocationTrackingService.isConsentGranted();
+
+    if (mounted) {
+      setState(() => _locationConsent = granted);
+    }
+  }
+
+  String _lastMapUpdateLabel() {
+    final time = _radarSession?.lastMapSyncAt?.toLocal();
+
+    if (time == null) return '업데이트 기록 없음';
+
+    final hour = time.hour.toString().padLeft(2, '0');
+    final minute = time.minute.toString().padLeft(2, '0');
+
+    return '마지막 업데이트 $hour:$minute';
+  }
+
+  void _openLocationConsentSettings() {
+    Navigator.of(context)
+        .pushNamedAndRemoveUntil('/', (route) => false, arguments: 2);
+  }
+
   static const _radarLoadingColor = Color(0xFFE6F5FB);
 
   String get _radarAppointmentTitle {
@@ -869,7 +900,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
     if (_hiddenArrivalCheckingAppointments.contains(_activeAppointmentId)) {
       return;
     }
-    if (!_socketService.isConnected) return;
+    if (!(_radarSession?.isConnected ?? false)) return;
 
     final distance = _distanceToMeetingPlace(sample);
     if (distance == null || distance > 30) return;
@@ -987,61 +1018,18 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
     );
   }
 
-  Future<void> _startLocationTracking() async {
-    await _locationTrackingService.start(
-      onLocation: (sample) {
-        if (!mounted || _myArrivalConfirmed) return;
+  void _handleSessionLocation(LocationSample sample) {
+    if (!mounted || _myArrivalConfirmed) return;
 
-        _maybeShowArrivalChecking(sample);
+    _maybeShowArrivalChecking(sample);
 
-        final distance = _distanceToMeetingPlace(sample);
-        if (distance != null) {
-          debugPrint(
-            'ETA 체크인: 약속 장소까지 거리 '
-            '${distance.toStringAsFixed(1)}m',
-          );
-        }
-
-        setState(() {
-          _latestLocation = sample;
-        });
-
-        // 실제 GPS 좌표로 내 마커 갱신
-        _updateMyLocationMarker(sample);
-
-        debugPrint('==============================');
-        debugPrint('📍 GPS 위치 수집 완료');
-        debugPrint('위도: ${sample.latitude}');
-        debugPrint('경도: ${sample.longitude}');
-        debugPrint('속도: ${sample.speedKmh.toStringAsFixed(1)} km/h');
-        debugPrint('정확도: ${sample.accuracy.toStringAsFixed(1)} m');
-        debugPrint('시간: ${sample.collectedAt}');
-        debugPrint('==============================');
-
-        // 나중에 Socket.IO 전송
-        _sendLocationToServer(sample);
-      },
-      onError: (error) {
-        debugPrint('GPS 수집 실패: $error');
-      },
-    );
-  }
-
-  // ===============================================================
-  // 나중에 백엔드 Socket.IO 연결
-  // ===============================================================
-
-  void _sendLocationToServer(LocationSample sample) {
-    if (_myArrivalConfirmed || !_socketService.isConnected) return;
-
-    _socketService.send({
-      'type': 'location:update',
-      'latitude': sample.latitude,
-      'longitude': sample.longitude,
-      'speedKmh': sample.speedKmh < 0 ? 0.0 : sample.speedKmh,
+    setState(() {
+      _latestLocation = sample;
     });
 
-    debugPrint('ETA WebSocket: GPS 위치 전송');
+    _updateMyLocationMarker(sample);
+
+    debugPrint('GPS 위치 수집 완료');
   }
 
   // ===============================================================
@@ -1143,7 +1131,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
 
   Future<void> _openPokeSelection() async {
     final appointmentId = _activeAppointmentId;
-    if (appointmentId == null || !_socketService.isConnected) {
+    if (appointmentId == null || !(_radarSession?.isConnected ?? false)) {
       _radarNotice('실시간 연결을 확인해 주세요.');
       return;
     }
@@ -1254,7 +1242,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
 
   void _sendPokes(int appointmentId, List<int> selectedIds) {
     if (!mounted) return;
-    if (!_socketService.isConnected) {
+    if (!(_radarSession?.isConnected ?? false)) {
       _radarNotice('연결이 끊겼어요. 다시 시도해 주세요.');
       return;
     }
@@ -1264,7 +1252,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
     for (final id in selectedIds) {
       if (!eligibleIds.contains(id) || !_canPoke(appointmentId, id)) continue;
 
-      _socketService.send({'type': 'poke:send', 'targetParticipantId': id});
+      _radarSession?.send({'type': 'poke:send', 'targetParticipantId': id});
       _pokeCooldownUntil[(appointmentId, id)] = DateTime.now().add(
         const Duration(seconds: 60),
       );
@@ -1441,12 +1429,12 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
     );
 
     if (!mounted || action == null) return;
-    if (!_socketService.isConnected) {
+    if (!(_radarSession?.isConnected ?? false)) {
       _radarNotice('연결이 끊겨 찌르기 응답을 보내지 못했어요.');
       return;
     }
 
-    _socketService.send({
+    _radarSession?.send({
       'type': 'poke:respond',
       'pokeId': pokeId,
       'action': action,
@@ -1629,8 +1617,9 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
   @override
   void dispose() {
     _appointmentClockTimer?.cancel();
-    _locationTrackingService.dispose();
-    unawaited(_socketService.dispose());
+    unawaited(_locationSubscription?.cancel());
+    unawaited(_messageSubscription?.cancel());
+    unawaited(_connectionSubscription?.cancel());
     _checkingStatus.dispose();
 
     super.dispose();
@@ -1648,7 +1637,21 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
     );
     final hasMeetingTimePassed =
         meetAt != null && !DateTime.now().isBefore(meetAt);
-    final showFriendSheet = meetAt != null && !hasMeetingTimePassed;
+    final needsConsent = _locationConsent == false;
+    final disconnected =
+        !needsConsent && (_radarSession?.hasConnectionIssue ?? false);
+
+    final waitingForFriends =
+        _locationConsent == true &&
+        !disconnected &&
+        (_radarSession?.isConnected ?? false) &&
+        _radarSession?.sharedFriendCount == 0;
+
+    final showFriendSheet =
+        meetAt != null &&
+        !hasMeetingTimePassed &&
+        !needsConsent &&
+        !waitingForFriends;
     final isLoadingRadar =
         !_isMapReady || (showFriendSheet && !_hasReceivedMapSync);
     final mapOffset = showFriendSheet ? _collapsedHeight / 2 : 0.0;
@@ -1768,14 +1771,25 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
                           ),
                           SizedBox(height: 4),
                           Text(
-                            isLoadingRadar
+                            needsConsent
+                                ? '${_radarTimeLabel()} · 위치 동의 필요'
+                                : disconnected
+                                ? '연결 끊김 · ${_lastMapUpdateLabel()}'
+                                : waitingForFriends
+                                ? '위치 공유 중 · 친구 위치 대기'
+                                : isLoadingRadar
                                 ? '위치 정보를 불러오는 중'
                                 : hasMeetingTimePassed
                                 ? '약속 시간이 지났어요 · 위치 공유 중'
                                 : '${_radarTimeLabel()} · 위치 공유 중',
                             style: TextStyle(
                               fontSize: 12,
-                              color: hasMeetingTimePassed && !isLoadingRadar
+                              color:
+                                  hasMeetingTimePassed &&
+                                      !isLoadingRadar &&
+                                      !needsConsent &&
+                                      !disconnected &&
+                                      !waitingForFriends
                                   ? const Color(0xFFA23030)
                                   : _blue,
                             ),
@@ -1800,9 +1814,143 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
               ),
             ),
 
+            if (needsConsent)
+              Positioned(
+                top: headerBottom + 8,
+                left: 24,
+                right: 24,
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(22),
+                  ),
+                  child: Row(
+                    children: [
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '위치 동의가 필요합니다',
+                              style: TextStyle(
+                                color: _navy,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            SizedBox(height: 8),
+                            Text(
+                              '내 위치와 도착 상태를 확인할 수 있어요.',
+                              style: TextStyle(color: _gray, fontSize: 13),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      SizedBox(
+                        width: 88,
+                        height: 46,
+                        child: ElevatedButton(
+                          onPressed: _openLocationConsentSettings,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF7DD3F7),
+                            foregroundColor: _navy,
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                          ),
+                          child: const Text(
+                            '이동',
+                            style: TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+            if (waitingForFriends && _isMapReady && !_friendWaitingDismissed)
+              Positioned.fill(
+                top: headerBottom,
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(22),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(24),
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 64,
+                            height: 64,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFE8F7FF),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: const Icon(
+                              Icons.remove,
+                              size: 30,
+                              color: Color(0xFF1577A5),
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                          const Text(
+                            '아직 공유된 친구 위치가 없어요',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: _navy,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          const Text(
+                            '친구가 위치 공유를 시작하면 표시돼요.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: _gray, fontSize: 13),
+                          ),
+                          const SizedBox(height: 24),
+                          SizedBox(
+                            width: double.infinity,
+                            height: 52,
+                            child: ElevatedButton(
+                              onPressed: () {
+                                setState(() {
+                                  _friendWaitingDismissed = true;
+                                });
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF7DD3F7),
+                                foregroundColor: _navy,
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                              ),
+                              child: const Text(
+                                '닫기',
+                                style: TextStyle(fontWeight: FontWeight.w700),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
             if (showFriendSheet &&
                 !isLoadingRadar &&
-                _socketService.isConnected &&
+                (_radarSession?.isConnected ?? false) &&
                 _activeAppointmentId != null &&
                 _pokeTargets().any(
                   (target) => _canPoke(_activeAppointmentId!, target.id),

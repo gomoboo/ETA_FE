@@ -1,8 +1,19 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
+
 import 'package:shared_preferences/shared_preferences.dart';
 
 class EtaNotificationService {
+  static final _revision = ValueNotifier<int>(0);
+
+  static ValueListenable<int> get changes => _revision;
+
+  static Future<bool> hasUnreadNotifications() async {
+    final items = await getNotifications();
+    return items.any((item) => item['isRead'] != true);
+  }
+
   static const String _storageKey = 'eta_notifications_v1';
 
   static Future<List<Map<String, dynamic>>> getNotifications() async {
@@ -77,7 +88,10 @@ class EtaNotificationService {
       items.removeRange(100, items.length);
     }
 
-    await prefs.setString(_storageKey, jsonEncode(items));
+    final saved = await prefs.setString(_storageKey, jsonEncode(items));
+    if (saved) {
+      _revision.value++;
+    }
   }
 
   static Future<void> markNotificationsAsRead(Iterable<String> ids) async {
@@ -96,7 +110,10 @@ class EtaNotificationService {
     }
 
     if (changed) {
-      await prefs.setString(_storageKey, jsonEncode(items));
+      final saved = await prefs.setString(_storageKey, jsonEncode(items));
+      if (saved) {
+        _revision.value++;
+      }
     }
   }
 
@@ -110,6 +127,9 @@ class EtaNotificationService {
       }
     }
 
-    await prefs.setString(_storageKey, jsonEncode(items));
+    final saved = await prefs.setString(_storageKey, jsonEncode(items));
+    if (saved) {
+      _revision.value++;
+    }
   }
 }

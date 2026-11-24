@@ -58,9 +58,34 @@ class _AppointmentResultScreenState extends State<AppointmentResultScreen> {
     final appointment = await EtaApiService.getAppointmentDetail(
       widget.appointmentId,
     );
-    final meetAt = DateTime.tryParse(appointment['meetAt']?.toString() ?? '')
-        ?.toLocal();
-    if (meetAt != null && meetAt.isAfter(DateTime.now())) {
+    final status = (appointment['status'] ?? appointment['appointmentStatus'])
+        ?.toString()
+        .toUpperCase();
+
+    // 전원 도착으로 조기 종료된 약속도 정산할 수 있도록
+    // 예정 시간이 아닌 실제 서버 종료 상태를 기준으로 판단한다.
+    bool isCompleted = status == 'COMPLETED';
+
+    if (status == null) {
+      final home = await EtaApiService.getHomeAppointments();
+      final active = home['activeAppointments'];
+      final upcoming = home['upcomingAppointments'];
+
+      if (active is! List || upcoming is! List) {
+        throw StateError('약속 목록 응답 형식 오류');
+      }
+
+      final current = [...active, ...upcoming];
+
+      isCompleted = !current.any(
+        (item) =>
+            item is Map &&
+            item['appointmentId']?.toString() ==
+                widget.appointmentId.toString(),
+      );
+    }
+
+    if (!isCompleted) {
       return _SettlementViewData(appointment: appointment, upcoming: true);
     }
 
@@ -68,10 +93,6 @@ class _AppointmentResultScreenState extends State<AppointmentResultScreen> {
     final settlement = await EtaApiService.getSettlement(widget.appointmentId);
 
     // 실제 정산 결과가 조회된 경우에만 알림 저장
-    final status = (appointment['status'] ?? appointment['appointmentStatus'])
-        ?.toString()
-        .toUpperCase();
-
     if (status == 'COMPLETED') {
       final title = appointment['title']?.toString().trim();
 
@@ -176,6 +197,7 @@ class _AppointmentResultScreenState extends State<AppointmentResultScreen> {
     String? secondaryLabel,
     VoidCallback? onSecondary,
     Color iconColor = _gray,
+    bool highlightedIcon = false,
   }) {
     return Center(
       child: Padding(
@@ -183,7 +205,18 @@ class _AppointmentResultScreenState extends State<AppointmentResultScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 48, color: iconColor),
+            if (highlightedIcon)
+              Container(
+                width: 84,
+                height: 80,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE8F7FF),
+                  borderRadius: BorderRadius.circular(24),
+                ),
+                child: Icon(icon, size: 36, color: iconColor),
+              )
+            else
+              Icon(icon, size: 48, color: iconColor),
             const SizedBox(height: 22),
             Text(
               title,
@@ -722,6 +755,8 @@ class _AppointmentResultScreenState extends State<AppointmentResultScreen> {
                                 '약속이 종료되면 정산을 확인할 수 있어요.';
                       return _stateMessage(
                         icon: Icons.schedule,
+                        iconColor: const Color(0xFF1685B5),
+                        highlightedIcon: true,
                         title: '아직 정산할 수 없어요',
                         description: timeDescription,
                         primaryLabel: '다시 확인',
