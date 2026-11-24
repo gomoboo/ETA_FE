@@ -1664,6 +1664,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
         meetAt != null &&
         !hasMeetingTimePassed &&
         !needsConsent &&
+        !disconnected &&
         !waitingForFriends;
     final isLoadingRadar =
         !_isMapReady || (showFriendSheet && !_hasReceivedMapSync);

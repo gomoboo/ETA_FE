@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 
 import 'eta_api_service.dart';
+import 'eta_arrival_cache_service.dart';
 import 'eta_notification_service.dart';
 import 'eta_websocket_service.dart';
 import 'guest_identity_service.dart';
@@ -258,6 +259,25 @@ class EtaRadarSession {
                   person['latitude'] is num &&
                   person['longitude'] is num;
             }).length;
+          }
+        }
+
+        if (data['type'] == 'checkin:completed') {
+          final arrivedId = int.tryParse(
+            data['participantId']?.toString() ?? '',
+          );
+          final arrivedAt = DateTime.tryParse(
+            data['arrivedAt']?.toString() ?? '',
+          );
+
+          if (arrivedId != null && arrivedAt != null) {
+            unawaited(
+              EtaArrivalCacheService.save(
+                appointmentId: appointmentId,
+                participantId: arrivedId,
+                arrivedAt: arrivedAt,
+              ),
+            );
           }
         }
 
