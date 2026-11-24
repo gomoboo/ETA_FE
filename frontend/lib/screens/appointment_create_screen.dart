@@ -111,14 +111,6 @@ class _AppointmentCreateScreenState extends State<AppointmentCreateScreen> {
 
     if (!isValid) return;
 
-    if (_penaltyMode == 'none') {
-      _showCreateError(
-        '지각 규칙 없음은 서버 지원 확인 후 사용할 수 있어요. '
-        '현재는 벌칙 또는 지각비를 선택해 주세요.',
-      );
-      return;
-    }
-
     final place = _selectedPlace!;
     final meetAt = _selectedAppointmentDateTime!;
 
@@ -127,7 +119,7 @@ class _AppointmentCreateScreenState extends State<AppointmentCreateScreen> {
       return;
     }
 
-    String penaltyType = 'PENALTY';
+    String penaltyType = _penaltyMode == 'none' ? 'NONE' : 'PENALTY';
     String? penaltyContent;
     int finePerMinute = 0;
 

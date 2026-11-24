@@ -129,7 +129,9 @@ class _AppointmentWarrantScreenState extends State<AppointmentWarrantScreen> {
         fallback = warrant.penaltyContent ?? '벌칙 확인 필요';
     }
 
-    final result = warrant.finalPenalty.trim().isNotEmpty
+    final result = warrant.penaltyMode == WarrantPenaltyMode.none
+        ? fallback
+        : warrant.finalPenalty.trim().isNotEmpty
         ? warrant.finalPenalty
         : fallback;
 
