@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/eta_api_service.dart';
+import '../services/eta_arrival_cache_service.dart';
 import '../services/eta_notification_service.dart';
 import 'appointment_warrant_screen.dart';
 
@@ -90,7 +91,47 @@ class _AppointmentResultScreenState extends State<AppointmentResultScreen> {
     }
 
     // 서버가 정산 결과를 실제로 제공하는 경우에만 완료된 정산으로 표시한다.
-    final settlement = await EtaApiService.getSettlement(widget.appointmentId);
+    final settlement = Map<String, dynamic>.from(
+      await EtaApiService.getSettlement(widget.appointmentId),
+    );
+
+    final participants = settlement['participants'];
+
+    if (participants is List) {
+      final rows = <dynamic>[];
+
+      for (final item in participants) {
+        if (item is! Map) {
+          rows.add(item);
+          continue;
+        }
+
+        final row = Map<String, dynamic>.from(item);
+        final id = int.tryParse(row['participantId']?.toString() ?? '');
+        final arrivalStatus = row['arrivalStatus']?.toString();
+
+        final serverTime = DateTime.tryParse(
+          row['arrivedAt']?.toString() ?? '',
+        );
+
+        if (id != null &&
+            ['EARLY', 'ON_TIME', 'LATE'].contains(arrivalStatus) &&
+            serverTime == null) {
+          final cachedTime = await EtaArrivalCacheService.read(
+            widget.appointmentId,
+            id,
+          );
+
+          if (cachedTime != null) {
+            row['arrivedAt'] = cachedTime.toIso8601String();
+          }
+        }
+
+        rows.add(row);
+      }
+
+      settlement['participants'] = rows;
+    }
 
     // 실제 정산 결과가 조회된 경우에만 알림 저장
     if (status == 'COMPLETED') {
@@ -319,6 +360,9 @@ class _AppointmentResultScreenState extends State<AppointmentResultScreen> {
 
   Widget _participantCard(Map participant, String mode, int? myParticipantId) {
     final status = participant['arrivalStatus']?.toString() ?? '';
+    final arrivedAt = DateTime.tryParse(
+      participant['arrivedAt']?.toString() ?? '',
+    )?.toLocal();
     final lateMinutes = (participant['lateMinutes'] as num?)?.toInt() ?? 0;
     final fineAmount = (participant['fineAmount'] as num?)?.toInt() ?? 0;
     final isLate = status == 'LATE';
@@ -373,10 +417,13 @@ class _AppointmentResultScreenState extends State<AppointmentResultScreen> {
                   ),
                 ),
                 const SizedBox(height: 6),
-                // 정산 API에 실제 도착 시각이 없으므로 예시값을 만들지 않는다.
-                const Text(
-                  '도착 시각 정보 없음',
-                  style: TextStyle(color: _gray, fontSize: 11),
+                Text(
+                  status == 'NOT_ARRIVED'
+                      ? '미도착'
+                      : arrivedAt != null
+                      ? '${_time(arrivedAt)} 도착'
+                      : '도착 시각 정보 없음',
+                  style: const TextStyle(color: _gray, fontSize: 11),
                 ),
               ],
             ),
