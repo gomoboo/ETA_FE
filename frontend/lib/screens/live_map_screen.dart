@@ -225,9 +225,16 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
     super.initState();
 
     _startLocationTracking();
-    _appointmentClockTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      if (mounted && _cachedAppointmentDetail != null) {
-        setState(() {});
+    var lastClockBucket = DateTime.now().millisecondsSinceEpoch ~/ 30000;
+
+    _appointmentClockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      final bucket = DateTime.now().millisecondsSinceEpoch ~/ 30000;
+
+      if (bucket != lastClockBucket) {
+        lastClockBucket = bucket;
+        if (mounted && _cachedAppointmentDetail != null) {
+          setState(() {});
+        }
       }
     });
   }
@@ -578,21 +585,26 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
     return title == null || title.isEmpty ? '약속 정보 확인 중' : title;
   }
 
-  String _radarTimeLabel() {
+  int? _radarMinutesUntilMeeting() {
     final meetAt = DateTime.tryParse(
       _cachedAppointmentDetail?['meetAt']?.toString() ?? '',
-    )?.toLocal();
+    );
 
-    if (meetAt == null) return '약속 시간 확인 중';
+    if (meetAt == null) return null;
 
-    final seconds = meetAt.difference(DateTime.now()).inSeconds;
+    final meetingMinute = meetAt.millisecondsSinceEpoch ~/ 60000;
+    final currentMinute = DateTime.now().millisecondsSinceEpoch ~/ 60000;
 
-    if (seconds > 0) {
-      return '약속까지 ${(seconds + 59) ~/ 60}분';
-    }
+    return meetingMinute - currentMinute;
+  }
 
-    final minutes = DateTime.now().difference(meetAt).inMinutes;
-    return minutes == 0 ? '약속 시간이 되었어요' : '약속 시간 $minutes분 경과';
+  String _radarTimeLabel() {
+    final minutes = _radarMinutesUntilMeeting();
+
+    if (minutes == null) return '약속 시간 확인 중';
+    if (minutes >= 0) return '약속까지 $minutes분';
+
+    return '약속 시간이 지났어요';
   }
 
   bool _appointmentPlaceMarkerAdded = false;
@@ -1647,7 +1659,8 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
       _cachedAppointmentDetail?['meetAt']?.toString() ?? '',
     );
     final hasMeetingTimePassed =
-        meetAt != null && !DateTime.now().isBefore(meetAt);
+        (meetAt != null && !DateTime.now().isBefore(meetAt)) &&
+        (_radarMinutesUntilMeeting() ?? 0) < 0;
     final showFriendSheet = meetAt != null && !hasMeetingTimePassed;
     final isLoadingRadar =
         !_isMapReady || (showFriendSheet && !_hasReceivedMapSync);
