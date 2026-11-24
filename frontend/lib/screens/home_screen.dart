@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/eta_api_service.dart';
+import '../services/eta_home_cache_service.dart';
 import 'appointments_tab.dart';
 import 'my_tab_screen.dart';
 
@@ -61,17 +62,17 @@ class _FigmaHomeTabState extends State<_FigmaHomeTab> {
   static const _gray = Color(0xFF718696);
   static const _card = Color(0xFFEAF7FE);
 
-  late Future<Map<String, dynamic>> _future;
+  late Future<EtaHomeLoadResult> _future;
 
   @override
   void initState() {
     super.initState();
-    _future = EtaApiService.getHomeAppointments();
+    _future = EtaHomeCacheService.load();
   }
 
   void _reload() {
     setState(() {
-      _future = EtaApiService.getHomeAppointments();
+      _future = EtaHomeCacheService.load();
     });
   }
 
@@ -286,7 +287,7 @@ class _FigmaHomeTabState extends State<_FigmaHomeTab> {
     );
   }
 
-  Widget _appointmentCard(Map<String, dynamic> item) {
+  Widget _appointmentCard(Map<String, dynamic> item, {bool fromCache = false}) {
     final date = _parseTime(item['meetAt']);
     final isSharing = item['isLocationSharingActive'] == true;
     final count = item['participantCount'] is int
@@ -362,7 +363,7 @@ class _FigmaHomeTabState extends State<_FigmaHomeTab> {
                 width: double.infinity,
                 height: 48,
                 child: ElevatedButton(
-                  onPressed: () => _openLocation(item),
+                  onPressed: fromCache ? null : () => _openLocation(item),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: _blue,
                     foregroundColor: _navy,
@@ -526,7 +527,7 @@ class _FigmaHomeTabState extends State<_FigmaHomeTab> {
             ),
           ),
           const SizedBox(height: 12),
-          FutureBuilder<Map<String, dynamic>>(
+          FutureBuilder<EtaHomeLoadResult>(
             future: _future,
             builder: (context, snapshot) {
               if (snapshot.connectionState != ConnectionState.done) {
@@ -537,7 +538,7 @@ class _FigmaHomeTabState extends State<_FigmaHomeTab> {
                 return _errorContent();
               }
 
-              final data = snapshot.data ?? {};
+              final data = snapshot.data?.data ?? <String, dynamic>{};
               final active = (data['activeAppointments'] as List? ?? [])
                   .whereType<Map<String, dynamic>>()
                   .toList();
@@ -545,15 +546,49 @@ class _FigmaHomeTabState extends State<_FigmaHomeTab> {
                   .whereType<Map<String, dynamic>>()
                   .toList();
 
-              if (active.isNotEmpty) {
-                return _appointmentCard(active.first);
+              final fromCache = snapshot.data?.fromCache ?? false;
+              final item = active.isNotEmpty
+                  ? active.first
+                  : upcoming.isNotEmpty
+                  ? upcoming.first
+                  : null;
+
+              if (item == null) {
+                return _emptyContent();
               }
 
-              if (upcoming.isNotEmpty) {
-                return _appointmentCard(upcoming.first);
+              final card = _appointmentCard(item, fromCache: fromCache);
+
+              if (!fromCache) {
+                return card;
               }
 
-              return _emptyContent();
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.only(bottom: 8),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.wifi_off_rounded, color: _accent, size: 17),
+                        SizedBox(width: 8),
+                        Flexible(
+                          child: Text(
+                            '오프라인 · 마지막 저장 정보 표시 중',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: _navy,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  card,
+                ],
+              );
             },
           ),
         ],
@@ -571,17 +606,17 @@ class _HomeAppointmentsSection extends StatefulWidget {
 }
 
 class _HomeAppointmentsSectionState extends State<_HomeAppointmentsSection> {
-  late Future<Map<String, dynamic>> _homeFuture;
+  late Future<EtaHomeLoadResult> _homeFuture;
 
   @override
   void initState() {
     super.initState();
-    _homeFuture = EtaApiService.getHomeAppointments();
+    _homeFuture = EtaHomeCacheService.load();
   }
 
   void _reload() {
     setState(() {
-      _homeFuture = EtaApiService.getHomeAppointments();
+      _homeFuture = EtaHomeCacheService.load();
     });
   }
 
@@ -611,7 +646,7 @@ class _HomeAppointmentsSectionState extends State<_HomeAppointmentsSection> {
     Navigator.pushNamed(context, '/appointment-detail', arguments: id);
   }
 
-  Widget _activeCard(Map<String, dynamic> item) {
+  Widget _activeCard(Map<String, dynamic> item, {bool fromCache = false}) {
     return Padding(
       padding: const EdgeInsets.only(top: 12),
       child: Container(
@@ -655,7 +690,7 @@ class _HomeAppointmentsSectionState extends State<_HomeAppointmentsSection> {
               width: double.infinity,
               height: 44,
               child: ElevatedButton(
-                onPressed: () => _openAppointment(item),
+                onPressed: fromCache ? null : () => _openAppointment(item),
                 child: const Text('약속 상세 보기'),
               ),
             ),
@@ -667,7 +702,7 @@ class _HomeAppointmentsSectionState extends State<_HomeAppointmentsSection> {
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<Map<String, dynamic>>(
+    return FutureBuilder<EtaHomeLoadResult>(
       future: _homeFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState != ConnectionState.done) {
@@ -690,7 +725,8 @@ class _HomeAppointmentsSectionState extends State<_HomeAppointmentsSection> {
           );
         }
 
-        final data = snapshot.data ?? {};
+        final fromCache = snapshot.data?.fromCache ?? false;
+        final data = snapshot.data?.data ?? <String, dynamic>{};
         final active = (data['activeAppointments'] as List? ?? [])
             .whereType<Map<String, dynamic>>()
             .toList();
@@ -701,13 +737,38 @@ class _HomeAppointmentsSectionState extends State<_HomeAppointmentsSection> {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            if (fromCache)
+              const Padding(
+                padding: EdgeInsets.only(bottom: 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.wifi_off_rounded,
+                      color: Color(0xFF1685B5),
+                      size: 17,
+                    ),
+                    SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        '오프라인 · 마지막 저장 정보 표시 중',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF18354A),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             if (active.isEmpty)
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 12),
                 child: Text('진행 중인 약속이 없어요.'),
               ),
 
-            for (final item in active) _activeCard(item),
+            for (final item in active) _activeCard(item, fromCache: fromCache),
 
             const SizedBox(height: 18),
 
@@ -741,7 +802,7 @@ class _HomeAppointmentsSectionState extends State<_HomeAppointmentsSection> {
               Padding(
                 padding: const EdgeInsets.only(top: 12),
                 child: InkWell(
-                  onTap: () => _openAppointment(item),
+                  onTap: fromCache ? null : () => _openAppointment(item),
                   borderRadius: BorderRadius.circular(18),
                   child: _UpcomingAppointmentCard(
                     title: item['title']?.toString() ?? '약속',
