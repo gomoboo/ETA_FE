@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 
 import 'eta_api_service.dart';
 import 'eta_arrival_cache_service.dart';
@@ -75,6 +76,50 @@ class EtaRadarSession {
   bool _started = false;
   bool _closed = false;
   bool _arrived = false;
+  bool _iosSharingNotificationRequested = false;
+
+  static const _notificationChannel = MethodChannel('eta/system_notifications');
+
+  Future<void> _notifyIosSharingStarted() async {
+    if (kIsWeb ||
+        defaultTargetPlatform != TargetPlatform.iOS ||
+        _iosSharingNotificationRequested ||
+        _closed ||
+        _arrived) {
+      return;
+    }
+
+    _iosSharingNotificationRequested = true;
+
+    try {
+      final granted = await _notificationChannel.invokeMethod<bool>(
+        'requestPermission',
+      );
+
+      if (granted != true) {
+        debugPrint('ETA iOS: 시스템 알림 권한 미허용');
+        return;
+      }
+
+      if (_closed ||
+          _arrived ||
+          !_socket.isConnected ||
+          !await LocationTrackingService.isConsentGranted()) {
+        return;
+      }
+
+      if (_closed || _arrived || !_socket.isConnected) return;
+
+      final sent = await _notificationChannel.invokeMethod<bool>(
+        'showSharingStarted',
+        {'appointmentId': appointmentId},
+      );
+
+      debugPrint('ETA iOS: 위치 공유 시스템 알림 발송=$sent');
+    } catch (error) {
+      debugPrint('ETA iOS: 시스템 알림 실패: $error');
+    }
+  }
 
   Future<void> start() async {
     if (_started || _closed) return;
@@ -233,6 +278,8 @@ class EtaRadarSession {
       'longitude': sample.longitude,
       'speedKmh': sample.speedKmh < 0 ? 0.0 : sample.speedKmh,
     });
+
+    unawaited(_notifyIosSharingStarted());
 
     debugPrint('ETA 세션: GPS 위치 전송');
   }
