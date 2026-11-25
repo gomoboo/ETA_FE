@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:kakao_map_sdk/kakao_map_sdk.dart';
 
+import 'services/guest_identity_service.dart';
 import 'screens/home_screen.dart';
 import 'screens/appointment_create_screen.dart';
 import 'screens/appointment_detail_screen.dart';
@@ -20,17 +21,21 @@ Future<void> main() async {
 
   await KakaoMapSdk.instance.initialize(kakaoNativeAppKey);
 
-  runApp(const MyApp());
+  final completed = await GuestIdentityService.hasCompletedOnboarding();
+
+  runApp(MyApp(initialRoute: completed ? '/' : '/onboarding'));
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  const MyApp({super.key, this.initialRoute = '/onboarding'});
+
+  final String initialRoute;
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      initialRoute: '/onboarding',
+      initialRoute: initialRoute,
       routes: {
         '/onboarding': (context) => const OnboardingScreen(),
         '/': (context) => const HomeScreen(),
