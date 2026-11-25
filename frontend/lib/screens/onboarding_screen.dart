@@ -1,3 +1,4 @@
+import '../services/guest_identity_service.dart';
 import '../services/eta_api_service.dart';
 import '../services/location_tracking_service.dart';
 
@@ -607,6 +608,8 @@ class _ThirdOnboardingScreenState extends State<ThirdOnboardingScreen> {
       await LocationTrackingService.setConsentGranted(
         _locationAgreementChecked,
       );
+
+      await GuestIdentityService.markOnboardingCompleted();
 
       if (!mounted) return;
 
