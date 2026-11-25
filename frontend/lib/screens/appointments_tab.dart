@@ -1,3 +1,5 @@
+import '../widgets/eta_notification_icon.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -818,11 +820,7 @@ class _AppointmentsTabState extends State<AppointmentsTab> {
                       IconButton(
                         onPressed: () =>
                             Navigator.pushNamed(context, '/notifications'),
-                        icon: const Icon(
-                          Icons.notifications_none_rounded,
-                          size: 30,
-                          color: accent,
-                        ),
+                        icon: const EtaNotificationIcon(color: accent),
                       ),
                     ],
                   ),

@@ -45,6 +45,7 @@ class LocationTrackingService {
   }
 
   Timer? _timer;
+  StreamSubscription<Position>? _positionSubscription;
 
   bool _isRunning = false;
   bool _isCollecting = false;
@@ -86,20 +87,85 @@ class LocationTrackingService {
     // 첫 GPS 요청 중 stop()이 호출됐다면 타이머를 시작하지 않음
     if (!_isRunning) return;
 
-    // 이후 10초마다 수집
-    _timer = Timer.periodic(const Duration(seconds: 10), (_) {
-      _collectLocation(onLocation: onLocation, onError: onError);
-    });
+    if (!kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.android ||
+            defaultTargetPlatform == TargetPlatform.iOS)) {
+      _startPlatformLocationStream(onLocation: onLocation, onError: onError);
+    } else {
+      // 기타 플랫폼은 기존 타이머 방식을 유지한다.
+      _timer = Timer.periodic(const Duration(seconds: 10), (_) {
+        _collectLocation(onLocation: onLocation, onError: onError);
+      });
+    }
   }
 
   /// GPS 수집 중지
   void stop() {
     _timer?.cancel();
     _timer = null;
+    final subscription = _positionSubscription;
+    _positionSubscription = null;
+    if (subscription != null) {
+      unawaited(subscription.cancel());
+    }
 
     _isRunning = false;
     _isCollecting = false;
     _activeTrackers.remove(this);
+  }
+
+  void _startPlatformLocationStream({
+    required void Function(LocationSample sample) onLocation,
+    void Function(Object error)? onError,
+  }) {
+    final LocationSettings settings =
+        defaultTargetPlatform == TargetPlatform.iOS
+        ? AppleSettings(
+            accuracy: LocationAccuracy.high,
+            distanceFilter: 0,
+            activityType: ActivityType.other,
+            pauseLocationUpdatesAutomatically: false,
+            allowBackgroundLocationUpdates: true,
+            showBackgroundLocationIndicator: true,
+          )
+        : AndroidSettings(
+            accuracy: LocationAccuracy.high,
+            distanceFilter: 0,
+            intervalDuration: const Duration(seconds: 10),
+            foregroundNotificationConfig: const ForegroundNotificationConfig(
+              notificationTitle: '이따 위치 공유 중',
+              notificationText: '약속 도착 확인을 위해 위치를 공유하고 있어요.',
+              enableWakeLock: true,
+            ),
+          );
+
+    _positionSubscription =
+        Geolocator.getPositionStream(locationSettings: settings).listen(
+          (position) async {
+            if (!_isRunning) return;
+
+            try {
+              if (!await isConsentGranted() || !_isRunning) return;
+
+              final sample = LocationSample(
+                latitude: position.latitude,
+                longitude: position.longitude,
+                speedKmh: position.speed < 0 ? 0.0 : position.speed * 3.6,
+                accuracy: position.accuracy,
+                collectedAt: DateTime.now(),
+              );
+
+              if (_isRunning) {
+                onLocation(sample);
+              }
+            } catch (error) {
+              onError?.call(error);
+            }
+          },
+          onError: (Object error) {
+            if (_isRunning) onError?.call(error);
+          },
+        );
   }
 
   Future<bool> _prepareLocationPermission() async {

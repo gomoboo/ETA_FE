@@ -1,8 +1,11 @@
+import '../widgets/eta_notification_icon.dart';
+
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 
 import '../services/guest_identity_service.dart';
 import '../services/location_tracking_service.dart';
+import '../services/eta_radar_session.dart';
 
 class MyTabScreen extends StatefulWidget {
   const MyTabScreen({super.key});
@@ -118,6 +121,10 @@ class _MyTabScreenState extends State<MyTabScreen> {
       }
 
       await LocationTrackingService.setConsentGranted(value);
+
+      if (!value) {
+        await EtaRadarSession.stopAll();
+      }
 
       if (!mounted) return;
 
@@ -402,11 +409,7 @@ class _MyTabScreenState extends State<MyTabScreen> {
                       onPressed: () {
                         Navigator.pushNamed(context, '/notifications');
                       },
-                      icon: const Icon(
-                        Icons.notifications_none_rounded,
-                        size: 30,
-                        color: _accent,
-                      ),
+                      icon: const EtaNotificationIcon(color: _accent),
                     ),
                   ],
                 ),
