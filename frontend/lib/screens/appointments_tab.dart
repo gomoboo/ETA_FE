@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../services/eta_api_service.dart';
+import '../services/eta_home_cache_service.dart';
 import '../services/eta_appointment_tracking_service.dart';
 import '../services/eta_notification_service.dart';
 import 'invited_appointment_screen.dart';
@@ -27,6 +28,7 @@ class _AppointmentsTabState extends State<AppointmentsTab> {
   final codeController = TextEditingController();
 
   late Future<Map<String, dynamic>> appointmentsFuture;
+  bool _isShowingCachedAppointments = false;
 
   bool checkingCode = false;
   bool joining = false;
@@ -52,7 +54,17 @@ class _AppointmentsTabState extends State<AppointmentsTab> {
   }
 
   Future<Map<String, dynamic>> _loadAppointmentsWithNotifications() async {
-    final data = await EtaApiService.getHomeAppointments();
+    final result = await EtaHomeCacheService.load();
+    final data = result.data;
+
+    if (mounted) {
+      _isShowingCachedAppointments = result.fromCache;
+    }
+
+    // 오프라인 캐시로는 알림 및 약속 추적 정보를 갱신하지 않는다.
+    if (result.fromCache) {
+      return data;
+    }
 
     try {
       final active = data['activeAppointments'];
@@ -435,7 +447,9 @@ class _AppointmentsTabState extends State<AppointmentsTab> {
             width: double.infinity,
             height: 48,
             child: ElevatedButton(
-              onPressed: () => openAppointment(item, liveMap: true),
+              onPressed: _isShowingCachedAppointments
+                  ? null
+                  : () => openAppointment(item, liveMap: true),
               style: ElevatedButton.styleFrom(
                 backgroundColor: blue,
                 foregroundColor: navy,
@@ -465,7 +479,9 @@ class _AppointmentsTabState extends State<AppointmentsTab> {
         borderRadius: BorderRadius.circular(20),
         child: InkWell(
           borderRadius: BorderRadius.circular(20),
-          onTap: () => openAppointment(item),
+          onTap: _isShowingCachedAppointments
+              ? null
+              : () => openAppointment(item),
           child: Container(
             width: double.infinity,
             padding: const EdgeInsets.all(14),
@@ -698,12 +714,62 @@ class _AppointmentsTabState extends State<AppointmentsTab> {
             .toList();
 
         if (active.isEmpty && upcoming.isEmpty) {
-          return emptyState();
+          if (!_isShowingCachedAppointments) {
+            return emptyState();
+          }
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Padding(
+                padding: EdgeInsets.only(bottom: 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.wifi_off_rounded, color: accent, size: 17),
+                    SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        '오프라인 · 마지막 저장 정보 표시 중',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: navy,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              emptyState(),
+            ],
+          );
         }
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            if (_isShowingCachedAppointments)
+              const Padding(
+                padding: EdgeInsets.only(bottom: 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.wifi_off_rounded, color: accent, size: 17),
+                    SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        '오프라인 · 마지막 저장 정보 표시 중',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: navy,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             if (active.isNotEmpty) ...[
               sectionTitle('진행 중인 약속'),
               for (final item in active) activeCard(item),
@@ -732,16 +798,8 @@ class _AppointmentsTabState extends State<AppointmentsTab> {
         FutureBuilder<Map<String, dynamic>>(
           future: appointmentsFuture,
           builder: (context, snapshot) {
-            final upcoming = snapshot.data?['upcomingAppointments'];
-            final active = snapshot.data?['activeAppointments'];
-
-            final upcomingCount = upcoming is List ? upcoming.length : 0;
-            final activeCount = active is List ? active.length : 0;
-
             return SingleChildScrollView(
-              physics: upcomingCount >= 2 || activeCount >= 2
-                  ? const BouncingScrollPhysics()
-                  : const NeverScrollableScrollPhysics(),
+              physics: const BouncingScrollPhysics(),
               padding: const EdgeInsets.fromLTRB(24, 24, 24, 110),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,

@@ -12,6 +12,7 @@ class PastAppointmentsScreen extends StatefulWidget {
 
 class _PastAppointmentsScreenState extends State<PastAppointmentsScreen> {
   bool _isRefreshing = false;
+  bool _hasLoadError = false;
 
   List<Map<String, dynamic>> _pastAppointments = [];
 
@@ -34,19 +35,83 @@ class _PastAppointmentsScreenState extends State<PastAppointmentsScreen> {
 
       setState(() {
         _pastAppointments = items;
+        _hasLoadError = false;
       });
     } catch (error) {
       debugPrint('지난 약속 조회 실패: $error');
-
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('지난 약속을 불러오지 못했어요.')));
+        setState(() => _hasLoadError = true);
       }
     } finally {
       if (mounted) {
         setState(() => _isRefreshing = false);
       }
     }
+  }
+
+  Widget _networkErrorState() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(20, 22, 20, 22),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+      ),
+      child: Column(
+        children: [
+          Container(
+            width: 64,
+            height: 64,
+            decoration: BoxDecoration(
+              color: const Color(0xFFE8F7FF),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: const Icon(
+              Icons.priority_high_rounded,
+              size: 34,
+              color: _accent,
+            ),
+          ),
+          const SizedBox(height: 20),
+          const Text(
+            '지난 약속을 불러오지 못했어요',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w700,
+              color: _navy,
+            ),
+          ),
+          const SizedBox(height: 20),
+          const Text(
+            '네트워크 연결이 원활하지 않아요.\n'
+            '연결 상태를 확인하고 다시 시도해 주세요.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 13, height: 1.6, color: _gray),
+          ),
+          const SizedBox(height: 22),
+          SizedBox(
+            width: double.infinity,
+            height: 52,
+            child: ElevatedButton(
+              onPressed: _refresh,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _blue,
+                foregroundColor: _navy,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(18),
+                ),
+              ),
+              child: const Text(
+                '다시 시도',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   String _formatMeetAt(dynamic value) {
@@ -170,7 +235,7 @@ class _PastAppointmentsScreenState extends State<PastAppointmentsScreen> {
               ),
             ),
 
-            const SizedBox(height: 68),
+            const SizedBox(height: 24),
 
             Expanded(
               child: _isRefreshing
@@ -197,7 +262,9 @@ class _PastAppointmentsScreenState extends State<PastAppointmentsScreen> {
                     )
                   : SingleChildScrollView(
                       padding: const EdgeInsets.symmetric(horizontal: 24),
-                      child: _pastAppointments.isNotEmpty
+                      child: _hasLoadError
+                          ? _networkErrorState()
+                          : _pastAppointments.isNotEmpty
                           ? Column(
                               children: [
                                 for (final item in _pastAppointments)
