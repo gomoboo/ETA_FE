@@ -527,6 +527,11 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
             ? (secondsRemaining + 59) ~/ 60
             : 0;
 
+        final displayMinutes = _radarMinutesUntilMeeting();
+        final isLateForDisplay = displayMinutes != null
+            ? displayMinutes < 0
+            : minutesRemaining != null && minutesRemaining < 0;
+
         final lateRisk =
             etaMinutes != null &&
             minutesRemaining != null &&
@@ -538,8 +543,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
           status = '도착 완료';
         } else if (movement == 'SUSPECTED_NOT_DEPARTED') {
           status = '미출발 의심';
-        } else if (movement == 'LATE' ||
-            (minutesRemaining != null && minutesRemaining <= 0)) {
+        } else if (isLateForDisplay) {
           status = '지각 중';
         } else if (lateRisk) {
           status = '$etaMinutes분 후 · 지각 위험';
@@ -557,7 +561,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
           warning:
               lateRisk ||
               movement == 'SUSPECTED_NOT_DEPARTED' ||
-              movement == 'LATE',
+              isLateForDisplay,
         );
       }
 
