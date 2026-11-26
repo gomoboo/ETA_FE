@@ -1367,7 +1367,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
         insetPadding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(24, 24, 24, 12),
+          padding: const EdgeInsets.all(24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1418,8 +1418,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
               SizedBox(
                 height: 48,
                 child: ElevatedButton(
-                  onPressed: () =>
-                      Navigator.of(dialogContext).pop('NOW_DEPARTING'),
+                  onPressed: () => Navigator.of(dialogContext).pop('DISMISSED'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF14779D),
                     foregroundColor: Colors.white,
@@ -1429,14 +1428,10 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
                     ),
                   ),
                   child: const Text(
-                    '지금 출발해요',
+                    '닫기',
                     style: TextStyle(fontWeight: FontWeight.w700),
                   ),
                 ),
-              ),
-              TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop('DISMISSED'),
-                child: const Text('닫기', style: TextStyle(color: _gray)),
               ),
             ],
           ),
