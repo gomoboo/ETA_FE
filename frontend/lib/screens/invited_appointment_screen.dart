@@ -7,10 +7,12 @@ class InvitedAppointmentScreen extends StatefulWidget {
   const InvitedAppointmentScreen({
     super.key,
     required this.inviteCode,
+    this.onJoined,
     required this.preview,
   });
 
   final String inviteCode;
+  final VoidCallback? onJoined;
   final Map<String, dynamic> preview;
 
   @override
@@ -123,6 +125,8 @@ class _InvitedAppointmentScreenState extends State<InvitedAppointmentScreen> {
         });
         return;
       }
+
+      widget.onJoined?.call();
 
       Navigator.pushNamedAndRemoveUntil(
         context,

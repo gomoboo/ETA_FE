@@ -100,6 +100,20 @@ class FriendInviteScreen extends StatelessWidget {
       );
   }
 
+  Future<void> copyCode(BuildContext context) async {
+    final code = inviteCode;
+    if (!RegExp(r'^[A-Za-z0-9]{6}$').hasMatch(code)) return;
+
+    try {
+      await Clipboard.setData(ClipboardData(text: code));
+      if (!context.mounted) return;
+      showNotice(context, '✓ 초대 코드를 복사했어요.');
+    } catch (error) {
+      if (!context.mounted) return;
+      showNotice(context, '초대 코드 복사에 실패했어요.');
+    }
+  }
+
   Future<void> copyLink(BuildContext context) async {
     if (!hasLink) return;
 
@@ -263,13 +277,17 @@ class FriendInviteScreen extends StatelessWidget {
                       style: TextStyle(fontSize: 13, color: gray),
                     ),
                     const SizedBox(height: 10),
-                    Text(
-                      inviteCode,
-                      style: const TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w700,
-                        color: navy,
-                        letterSpacing: 0,
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onLongPress: () => copyCode(context),
+                      child: Text(
+                        inviteCode,
+                        style: const TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w700,
+                          color: navy,
+                          letterSpacing: 0,
+                        ),
                       ),
                     ),
                   ],

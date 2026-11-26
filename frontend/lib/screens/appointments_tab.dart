@@ -228,8 +228,18 @@ class _AppointmentsTabState extends State<AppointmentsTab> {
       await Navigator.push(
         context,
         MaterialPageRoute<void>(
-          builder: (_) =>
-              InvitedAppointmentScreen(inviteCode: code, preview: preview),
+          builder: (_) => InvitedAppointmentScreen(
+            inviteCode: code,
+            preview: preview,
+            onJoined: () {
+              if (!mounted) return;
+              setState(() {
+                codeController.clear();
+                codeError = null;
+                codeNotFound = false;
+              });
+            },
+          ),
         ),
       );
 
