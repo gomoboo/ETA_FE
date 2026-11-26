@@ -80,6 +80,53 @@ class EtaRadarSession {
 
   static const _notificationChannel = MethodChannel('eta/system_notifications');
 
+  final Set<String> _notifiedPokeIds = {};
+
+  Future<void> _notifyReceivedPoke(Map data) async {
+    if (kIsWeb ||
+        (defaultTargetPlatform != TargetPlatform.iOS &&
+            defaultTargetPlatform != TargetPlatform.android)) {
+      return;
+    }
+
+    final pokeId = data['pokeId']?.toString().trim() ?? '';
+
+    if (pokeId.isEmpty) return;
+
+    final notificationId = 'poke:$appointmentId:$pokeId';
+
+    if (!_notifiedPokeIds.add(notificationId)) return;
+
+    final sender = data['senderNickname']?.toString().trim() ?? '';
+    final nickname = sender.isEmpty ? '친구' : sender;
+
+    final eventTitle = data['appointmentTitle']?.toString().trim() ?? '';
+    final cachedTitle = _appointmentDetail?['title']?.toString().trim() ?? '';
+
+    final title = eventTitle.isNotEmpty
+        ? eventTitle
+        : cachedTitle.isNotEmpty
+        ? cachedTitle
+        : '약속';
+
+    try {
+      final sent = await _notificationChannel.invokeMethod<bool>('showPoke', {
+        'id': notificationId,
+        'title': '$nickname님이 찌르기를 보냈어요!',
+        'body': '$title · 출발 신호가 도착했어요.',
+      });
+
+      if (sent != true) {
+        _notifiedPokeIds.remove(notificationId);
+      }
+
+      debugPrint('ETA 찌르기 시스템 알림 발송=$sent');
+    } catch (error) {
+      _notifiedPokeIds.remove(notificationId);
+      debugPrint('ETA 찌르기 시스템 알림 실패: $error');
+    }
+  }
+
   Future<void> _notifyIosSharingStarted() async {
     if (kIsWeb ||
         defaultTargetPlatform != TargetPlatform.iOS ||
@@ -334,6 +381,10 @@ class EtaRadarSession {
           _location.stop();
           debugPrint('ETA 세션: 본인 도착 확정, GPS 중단');
         }
+      }
+
+      if (data is Map && data['type'] == 'poke:received') {
+        unawaited(_notifyReceivedPoke(data));
       }
 
       if (data is Map && !_messages.hasListener) {
