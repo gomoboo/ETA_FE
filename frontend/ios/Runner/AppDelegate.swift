@@ -56,6 +56,44 @@ private final class EtaNotificationDelegate: NSObject, UNUserNotificationCenterD
           }
         }
 
+      case "showPoke":
+        guard let args = call.arguments as? [String: Any],
+              let notificationId = args["id"] as? String,
+              let title = args["title"] as? String,
+              let body = args["body"] as? String else {
+          result(FlutterError(
+            code: "INVALID_ARGUMENTS",
+            message: "찌르기 알림 정보가 필요합니다.",
+            details: nil
+          ))
+          return
+        }
+
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.sound = .default
+
+        let request = UNNotificationRequest(
+          identifier: notificationId,
+          content: content,
+          trigger: nil
+        )
+
+        center.add(request) { error in
+          DispatchQueue.main.async {
+            if let error = error {
+              result(FlutterError(
+                code: "NOTIFICATION_ERROR",
+                message: error.localizedDescription,
+                details: nil
+              ))
+            } else {
+              result(true)
+            }
+          }
+        }
+
       case "showSharingStarted":
         guard let args = call.arguments as? [String: Any],
               let appointmentId = args["appointmentId"] as? Int else {
